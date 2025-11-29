@@ -7,10 +7,12 @@ import RecentOrdersTable from '../../components/RecentOrdersTable';
 import PopularItems from '../../components/PopularItems';
 import SalesChart from '../../components/SalesChart';
 import NotificationPreviewCard from '../../components/NotificationPreviewCard';
+import { useTranslation } from '../../utils/i18n';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { useNotifications } from '../../contexts/NotificationContext';
 
 export default function AdminDashboard() {
+  const { t } = useTranslation();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -165,6 +167,8 @@ export default function AdminDashboard() {
               const el = document.getElementById('recent-orders');
               if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
+            pageTitle={t('dashboard')}
+            pageSubtitle={t('summaryAndRecent')}
           />
           <div className="flex-grow-1 overflow-auto">
             {/* Preview card notification */}
@@ -178,10 +182,6 @@ export default function AdminDashboard() {
               }}
             />
             <div className="container-fluid px-4 py-4">
-              <div className="mb-4">
-                <h1 className="display-6 fw-bold mb-2">Dashboard</h1>
-                <p className="text-muted mb-0">Summary and recent activity</p>
-              </div>
               <SummaryCards stats={stats} loading={loading} />
               <div id="recent-orders">
                 <RecentOrdersTable orders={orders} loading={loading} error={error} />

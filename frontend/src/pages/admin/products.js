@@ -4,6 +4,8 @@ import Link from 'next/link';
 import Sidebar from '../../components/Sidebar';
 import TopNavbar from '../../components/TopNavbar';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useTranslation } from '../../utils/i18n';
+import { formatCurrency } from '../../utils/formatCurrency';
 
 export default function ProductsPage() {
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
@@ -45,6 +47,8 @@ export default function ProductsPage() {
       setLoading(false);
     }
   };
+
+  const { t } = useTranslation();
 
   useEffect(() => {
     fetchProducts();
@@ -129,20 +133,17 @@ export default function ProductsPage() {
         <Sidebar open={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} />
         
         <div className="flex-grow-1 d-flex flex-column overflow-hidden">
-          {/* Global Top Header */}
-          <div className="d-flex justify-content-between align-items-center border-bottom px-4 py-3 bg-white" style={{height: 64}}>
-            <div>
-              <div className="h5 mb-0 fw-bold">Products</div>
-              <div className="text-muted small">Product inventory & performance</div>
-            </div>
-            <div className="d-flex align-items-center gap-3">
-              <button className="btn btn-link text-secondary p-0"><i className="bi bi-search"></i></button>
-              <button className="btn btn-link text-secondary p-0"><i className="bi bi-bell"></i></button>
-              <div className="d-inline-flex align-items-center justify-content-center rounded-circle bg-light" style={{width: 36, height: 36}}>
-                <i className="bi bi-person"></i>
-              </div>
-            </div>
-          </div>
+          <TopNavbar
+            toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            notifications={notifications}
+            unreadCount={unreadCount}
+            hasUnread={hasUnread}
+            onMarkAllRead={markAllRead}
+            onClearAll={clearAll}
+            onNotificationClick={(id) => markAsRead(id)}
+            pageTitle={t('productsTitle')}
+            pageSubtitle={t('productInventory')}
+          />
 
           <div className="flex-grow-1 overflow-auto">
             <div className="container-fluid px-4 py-4">
@@ -164,8 +165,8 @@ export default function ProductsPage() {
                         <i className="bi bi-box"></i>
                       </div>
                       <div>
-                        <div className="h4 mb-0">{products.length}</div>
-                        <div className="text-muted small">Total Products</div>
+                          <div className="h4 mb-0">{products.length}</div>
+                          <div className="text-muted small">{t('totalProducts')}</div>
                       </div>
                     </div>
                   </div>
@@ -178,7 +179,7 @@ export default function ProductsPage() {
                       </div>
                       <div>
                         <div className="h4 mb-0">{products.filter(p=>p.status==='active').length}</div>
-                        <div className="text-muted small">Active Products</div>
+                        <div className="text-muted small">{t('activeProducts')}</div>
                       </div>
                     </div>
                   </div>
@@ -191,7 +192,7 @@ export default function ProductsPage() {
                       </div>
                       <div>
                         <div className="h4 mb-0">{products.filter(p=>p.low_stock||p.out_of_stock).length}</div>
-                        <div className="text-muted small">Low Stock Items</div>
+                        <div className="text-muted small">{t('lowStockItems')}</div>
                       </div>
                     </div>
                   </div>
@@ -204,7 +205,7 @@ export default function ProductsPage() {
                       </div>
                       <div>
                         <div className="h4 mb-0">{products.reduce((sum,p)=>sum+(p.views||0),0)}</div>
-                        <div className="text-muted small">Total Views</div>
+                        <div className="text-muted small">{t('totalViews')}</div>
                       </div>
                     </div>
                   </div>
@@ -222,7 +223,7 @@ export default function ProductsPage() {
                           <input
                             type="text"
                             className="form-control"
-                            placeholder="Search products..."
+                            placeholder={t('searchProducts')}
                             value={filter.search}
                             onChange={(e) => setFilter({...filter, search: e.target.value})}
                           />
@@ -234,7 +235,7 @@ export default function ProductsPage() {
                           value={filter.category}
                           onChange={(e) => setFilter({...filter, category: e.target.value})}
                         >
-                          <option value="">All Categories</option>
+                          <option value="">{t('allCategories')}</option>
                           <option value="Cakes">Cakes</option>
                           <option value="Cupcakes">Cupcakes</option>
                           <option value="Muffins">Muffins</option>
@@ -248,28 +249,28 @@ export default function ProductsPage() {
                           value={filter.status}
                           onChange={(e) => setFilter({...filter, status: e.target.value})}
                         >
-                          <option value="">All Status</option>
+                          <option value="">{t('allStatus')}</option>
                           <option value="draft">Draft</option>
-                          <option value="active">Active</option>
+                          <option value="active">{t('activeLabel')}</option>
                           <option value="inactive">Inactive</option>
-                          <option value="archived">Archived</option>
+                          <option value="archived">{t('hiddenLabel')}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-2 d-flex justify-content-md-end gap-2">
                         <Link href="/admin/products/new">
-                          <button className="btn btn-primary"><i className="bi bi-plus-lg me-2"></i>Add Product</button>
+                          <button className="btn btn-primary"><i className="bi bi-plus-lg me-2"></i>{t('addProduct')}</button>
                         </Link>
-                        <button className="btn btn-outline-secondary" onClick={() => setFilter({ category: '', status: '', search: '' })}>Clear</button>
-                        <button className="btn btn-outline-secondary">Export CSV</button>
+                        <button className="btn btn-outline-secondary" onClick={() => setFilter({ category: '', status: '', search: '' })}>{t('clear')}</button>
+                        <button className="btn btn-outline-secondary">{t('exportCSV')}</button>
                       </div>
                     </div>
                   </div>
 
                   {/* Modern Data Grid */}
                   {loading ? (
-                    <div className="text-center py-5">
+                      <div className="text-center py-5">
                       <div className="spinner-border text-primary" role="status">
-                        <span className="visually-hidden">Loading...</span>
+                        <span className="visually-hidden">{t('loadingOrders')}</span>
                       </div>
                     </div>
                   ) : error ? (
@@ -277,10 +278,10 @@ export default function ProductsPage() {
                   ) : products.length === 0 ? (
                     <div className="text-center py-5">
                       <i className="bi bi-box-seam fs-1 text-muted mb-3 d-block"></i>
-                      <h5 className="text-muted">No products yet</h5>
-                      <p className="text-muted">Create your first product to get started.</p>
+                      <h5 className="text-muted">{t('noProductsYet')}</h5>
+                      <p className="text-muted">{t('createYourFirstProduct')}</p>
                       <Link href="/admin/products/new">
-                        <button className="btn btn-primary"><i className="bi bi-plus-lg me-2"></i>Create Product</button>
+                        <button className="btn btn-primary"><i className="bi bi-plus-lg me-2"></i>{t('createProduct')}</button>
                       </Link>
                     </div>
                   ) : (
@@ -288,12 +289,12 @@ export default function ProductsPage() {
                       <table className="table align-middle mb-0" style={{borderCollapse: 'separate'}}>
                         <thead className="table-light" style={{position: 'sticky', top: 0, zIndex: 1}}>
                           <tr>
-                            <th>Product</th>
-                            <th>Price</th>
-                            <th>Stock</th>
-                            <th>Performance</th>
-                            <th>Status</th>
-                            <th>Actions</th>
+                            <th>{t('productColumn')}</th>
+                            <th>{t('priceColumn')}</th>
+                            <th>{t('stockColumn')}</th>
+                            <th>{t('performanceColumn')}</th>
+                            <th>{t('statusColumn')}</th>
+                            <th>{t('actionsColumn')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -313,7 +314,7 @@ export default function ProductsPage() {
                                   <div>
                                     <div className="fw-semibold mb-1 d-flex align-items-center gap-2">
                                       {product.name}
-                                      <span className="badge bg-secondary">{product.category}</span>
+                                        <span className="badge bg-secondary">{product.category}</span>
                                     </div>
                                     <div className="text-muted small d-none d-md-block" style={{maxWidth: 420}}>
                                       {product.description?.substring(0, 80)}{product.description && product.description.length > 80 ? '…' : ''}
@@ -321,17 +322,17 @@ export default function ProductsPage() {
                                   </div>
                                 </div>
                               </td>
-                              <td>${product.price.toFixed(2)}</td>
+                                    <td>{formatCurrency(product.price)}</td>
                               <td>
                                 <div className="d-flex flex-column">
                                   <span className="fw-semibold">{product.stock}</span>
                                   <span className="mt-2">
                                     {product.out_of_stock ? (
-                                      <span className="badge rounded-pill bg-danger d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-white" style={{width:8,height:8,opacity:.7}}></span> Out of Stock</span>
+                                      <span className="badge rounded-pill bg-danger d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-white" style={{width:8,height:8,opacity:.7}}></span> {t('outOfStock')}</span>
                                     ) : product.low_stock ? (
-                                      <span className="badge rounded-pill bg-warning d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-white" style={{width:8,height:8,opacity:.7}}></span> Low Stock</span>
+                                      <span className="badge rounded-pill bg-warning d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-white" style={{width:8,height:8,opacity:.7}}></span> {t('lowStock')}</span>
                                     ) : (
-                                      <span className="badge rounded-pill bg-success d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-white" style={{width:8,height:8,opacity:.7}}></span> Good Stock</span>
+                                      <span className="badge rounded-pill bg-success d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-white" style={{width:8,height:8,opacity:.7}}></span> {t('goodStock')}</span>
                                     )}
                                   </span>
                                 </div>
@@ -345,13 +346,13 @@ export default function ProductsPage() {
                               </td>
                               <td>
                                 <span className={`badge rounded-pill ${product.status === 'active' ? 'bg-success' : 'bg-secondary'}`}>
-                                  {product.status === 'active' ? 'Active' : 'Hidden'}
+                                  {product.status === 'active' ? t('activeLabel') : t('hiddenLabel')}
                                 </span>
                               </td>
                               <td>
                                 <div className="btn-group btn-group-sm">
                                   <Link href={`/admin/products/${product.id}`}>
-                                    <button className="btn btn-outline-secondary" title="Edit">
+                                    <button className="btn btn-outline-secondary" title={t('editTitle')}>
                                       <i className="bi bi-pencil"></i>
                                     </button>
                                   </Link>
@@ -359,7 +360,7 @@ export default function ProductsPage() {
                                     <button 
                                       className="btn btn-outline-warning"
                                       onClick={() => updateStatus(product.id, 'inactive')}
-                                      title="Hide"
+                                      title={t('hideTitle')}
                                     >
                                       <i className="bi bi-eye-slash"></i>
                                     </button>
@@ -367,7 +368,7 @@ export default function ProductsPage() {
                                     <button 
                                       className="btn btn-outline-warning"
                                       onClick={() => updateStatus(product.id, 'active')}
-                                      title="Show"
+                                      title={t('showTitle')}
                                     >
                                       <i className="bi bi-eye"></i>
                                     </button>
@@ -375,7 +376,7 @@ export default function ProductsPage() {
                                   <button 
                                     className="btn btn-outline-danger"
                                     onClick={() => deleteProduct(product.id)}
-                                    title="Delete"
+                                    title={t('deleteTitle')}
                                   >
                                     <i className="bi bi-trash"></i>
                                   </button>

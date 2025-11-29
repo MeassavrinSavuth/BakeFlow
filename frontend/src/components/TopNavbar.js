@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from '../utils/i18n';
 
 // Helper to format relative time
 function getRelativeTime(timestamp) {
@@ -13,7 +14,6 @@ function getRelativeTime(timestamp) {
 }
 
 export default function TopNavbar({
-  toggleSidebar,
   notifications = [],
   unreadCount = 0,
   hasUnread = false,
@@ -21,9 +21,12 @@ export default function TopNavbar({
   onMarkAllRead,
   onClearAll,
   onNotificationClick,
+  pageTitle, // optional: string shown in navbar
+  pageSubtitle, // optional: small subtitle shown under title
 }) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
+  const { t } = useTranslation();
 
   // Close when clicking outside
   useEffect(() => {
@@ -44,12 +47,21 @@ export default function TopNavbar({
   return (
     <nav className="navbar navbar-expand-lg navbar-light bg-white shadow-sm border-bottom bf-topnav py-0">
       <div className="container-fluid px-4 d-flex align-items-center position-relative">
-        <span className="navbar-brand mb-0 fs-4 fw-bold">Order Management</span>
+        <div>
+          {pageTitle ? (
+            <div>
+              <div className="h5 mb-0 fw-bold">{pageTitle}</div>
+              {pageSubtitle && <div className="text-muted small">{pageSubtitle}</div>}
+            </div>
+          ) : (
+            <span className="navbar-brand mb-0 fs-4 fw-bold">{t('orderManagement')}</span>
+          )}
+        </div>
         <div className="ms-auto d-flex align-items-center gap-3">
           <div className="position-relative" ref={panelRef}>
             <button
               className={`btn btn-link text-secondary position-relative p-0 bf-bell-btn ${hasUnread ? 'pulse' : ''}`}
-              aria-label={`Notifications${unreadCount ? `: ${unreadCount} new` : ''}`}
+              aria-label={`${t('notifications')}${unreadCount ? `: ${unreadCount} ${t('newOrder')}` : ''}`}
               onClick={togglePanel}
             >
               <i className={`bi bi-bell${hasUnread ? '-fill' : ''} fs-5`}></i>
@@ -61,15 +73,14 @@ export default function TopNavbar({
             </button>
 
             {/* Notification dropdown panel */}
-            <div className={`bf-notif-panel ${open ? 'show' : ''}`} role="region" aria-label="Notifications">
-              
+            <div className={`bf-notif-panel ${open ? 'show' : ''}`} role="region" aria-label={t('notifications')}>
               {/* Header */}
               <div className="bf-notif-header">
                 <div className="d-flex align-items-center justify-content-between">
                   <div>
-                    <h6 className="mb-0 fw-bold">Notifications</h6>
+                    <h6 className="mb-0 fw-bold">{t('notifications')}</h6>
                     {unreadCount > 0 && (
-                      <small className="text-muted">{unreadCount} unread</small>
+                      <small className="text-muted">{unreadCount} {t('unread')}</small>
                     )}
                   </div>
                   <button 
@@ -103,7 +114,7 @@ export default function TopNavbar({
                         <div className="d-flex align-items-start justify-content-between">
                           <div className="flex-grow-1">
                             <div className="bf-notif-title">
-                              <span className="badge bg-success-subtle text-success me-2">New Order</span>
+                              <span className="badge bg-success-subtle text-success me-2">{t('newOrder')}</span>
                               <strong>#{notif.id}</strong>
                             </div>
                             <div className="bf-notif-text">
@@ -124,8 +135,8 @@ export default function TopNavbar({
                 ) : (
                   <div className="bf-notif-empty">
                     <i className="bi bi-bell-slash fs-1 text-muted mb-3"></i>
-                    <p className="text-muted mb-0">No notifications yet</p>
-                    <small className="text-muted">You're all caught up!</small>
+                    <p className="text-muted mb-0">{t('noNotificationsYet')}</p>
+                    <small className="text-muted">{t('youreAllCaughtUp')}</small>
                   </div>
                 )}
               </div>
@@ -140,7 +151,7 @@ export default function TopNavbar({
                     }}
                   >
                     <i className="bi bi-check2-all me-1"></i>
-                    Mark all read
+                    {t('markAllRead')}
                   </button>
                   <button
                     className="btn btn-sm btn-link text-muted"
@@ -150,7 +161,7 @@ export default function TopNavbar({
                     }}
                   >
                     <i className="bi bi-trash me-1"></i>
-                    Clear all
+                    {t('clearAll')}
                   </button>
                 </div>
               )}
