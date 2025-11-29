@@ -7,6 +7,7 @@ import { statusColor } from '../../utils/statusColor';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { formatDate } from '../../utils/formatDate';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useTranslation } from '../../utils/i18n';
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -20,6 +21,7 @@ export default function OrdersPage() {
   const { notifications, unreadCount, hasUnread, markAsRead, markAllRead, clearAll, addNotifications } = useNotifications();
   const seenOrdersRef = useRef(new Set());
   const initializedRef = useRef(false);
+  const { t } = useTranslation();
 
   // Load seen orders from localStorage on mount
   useEffect(() => {
@@ -151,19 +153,19 @@ export default function OrdersPage() {
   }, [orders, filter]);
 
   const filters = [
-    { key: 'all', label: 'All', icon: 'grid' },
-    { key: 'pending', label: 'Pending', icon: 'hourglass' },
-    { key: 'preparing', label: 'Preparing', icon: 'egg-fried' },
-    { key: 'ready', label: 'Ready', icon: 'check-circle' },
-    { key: 'delivered', label: 'Delivered', icon: 'truck' }
+    { key: 'all', labelKey: 'all', icon: 'grid' },
+    { key: 'pending', labelKey: 'pending', icon: 'hourglass' },
+    { key: 'preparing', labelKey: 'preparing', icon: 'egg-fried' },
+    { key: 'ready', labelKey: 'ready', icon: 'check-circle' },
+    { key: 'delivered', labelKey: 'delivered', icon: 'truck' }
   ];
 
   const getStatusSteps = (currentStatus) => {
     const steps = [
-      { key: 'pending', label: 'Pending', icon: 'hourglass-split' },
-      { key: 'preparing', label: 'Preparing', icon: 'egg-fried' },
-      { key: 'ready', label: 'Ready', icon: 'check-circle' },
-      { key: 'delivered', label: 'Delivered', icon: 'truck' }
+      { key: 'pending', label: t('pending'), icon: 'hourglass-split' },
+      { key: 'preparing', label: t('preparing'), icon: 'egg-fried' },
+      { key: 'ready', label: t('ready'), icon: 'check-circle' },
+      { key: 'delivered', label: t('delivered'), icon: 'truck' }
     ];
     const currentIndex = steps.findIndex(s => s.key === currentStatus);
     return steps.map((step, idx) => ({
@@ -175,9 +177,9 @@ export default function OrdersPage() {
 
   const getNextAction = (status) => {
     const actions = {
-      pending: { label: 'Start Preparing', nextStatus: 'preparing', icon: 'egg-fried', color: 'primary' },
-      preparing: { label: 'Mark as Ready', nextStatus: 'ready', icon: 'check-circle', color: 'info' },
-      ready: { label: 'Mark as Delivered', nextStatus: 'delivered', icon: 'truck', color: 'success' }
+      pending: { label: t('startPreparing'), nextStatus: 'preparing', icon: 'egg-fried', color: 'primary' },
+      preparing: { label: t('markAsReady'), nextStatus: 'ready', icon: 'check-circle', color: 'info' },
+      ready: { label: t('markAsDelivered'), nextStatus: 'delivered', icon: 'truck', color: 'success' }
     };
     return actions[status];
   };
@@ -202,6 +204,8 @@ export default function OrdersPage() {
             onMarkAllRead={markAllRead}
             onClearAll={clearAll}
             onNotificationClick={(id) => markAsRead(id)}
+            pageTitle={t('ordersLabel') || t('orders')}
+            pageSubtitle={t('manageAndUpdateOrders')}
           />
           <div className="flex-grow-1 overflow-auto">
             {/* Preview card notification */}
@@ -220,20 +224,15 @@ export default function OrdersPage() {
                 </div>
               )}
 
-              <div className="mb-4 d-flex align-items-center justify-content-between flex-wrap gap-3">
-                <div>
-                  <h1 className="h3 fw-bold mb-1">Orders</h1>
-                  <p className="text-muted mb-0">Manage and update all orders</p>
-                </div>
-              </div>
+              
 
               <div className="card border-0 shadow-sm mb-4">
                 <div className="card-body">
-                  <h5 className="card-title mb-3"><i className="bi bi-funnel me-2"/>Filter Orders</h5>
+                  <h5 className="card-title mb-3"><i className="bi bi-funnel me-2"/>{t('filterOrders')}</h5>
                   <div className="btn-group flex-wrap" role="group">
                     {filters.map(f => (
                       <button key={f.key} onClick={() => setFilter(f.key)} className={`btn ${filter===f.key ? 'btn-dark' : 'btn-outline-secondary'}`}>
-                        <i className={`bi bi-${f.icon} me-1`} />{f.label}
+                        <i className={`bi bi-${f.icon} me-1`} />{t(f.labelKey)}
                       </button>
                     ))}
                   </div>
@@ -241,10 +240,10 @@ export default function OrdersPage() {
               </div>
 
               {error && <div className="alert alert-danger">{error}</div>}
-              {loading && <div className="text-center py-5"><div className="spinner-border text-primary" role="status" /><p className="mt-3 text-muted">Loading orders...</p></div>}
+              {loading && <div className="text-center py-5"><div className="spinner-border text-primary" role="status" /><p className="mt-3 text-muted">{t('loadingOrders')}</p></div>}
 
               {!loading && filtered.length === 0 && !error && (
-                <div className="card border-0 shadow-sm"><div className="card-body text-center py-5"><i className="bi bi-inbox fs-1 text-muted mb-3"/><h4 className="text-muted">No orders found</h4><p className="text-secondary">{filter !== 'all' ? `No ${filter} orders currently.` : 'Waiting for customers to place orders.'}</p></div></div>
+                <div className="card border-0 shadow-sm"><div className="card-body text-center py-5"><i className="bi bi-inbox fs-1 text-muted mb-3"/><h4 className="text-muted">{t('noOrdersFound')}</h4><p className="text-secondary">{filter !== 'all' ? t('noFilteredOrders').replace('{filter}', t(filter)) : t('waitingForOrders')}</p></div></div>
               )}
 
               <div className="row g-4">
@@ -295,7 +294,7 @@ export default function OrdersPage() {
                                   <i className="bi bi-person-fill fs-5 text-primary-bake"></i>
                                 </div>
                                 <div className="flex-grow-1">
-                                  <small className="text-muted text-uppercase d-block mb-1" style={{fontSize: '0.7rem', letterSpacing: '0.5px'}}>Customer</small>
+                                  <small className="text-muted text-uppercase d-block mb-1" style={{fontSize: '0.7rem', letterSpacing: '0.5px'}}>{t('customerLabel')}</small>
                                   <strong className="d-block">{order.customer_name}</strong>
                                 </div>
                               </div>
@@ -308,8 +307,8 @@ export default function OrdersPage() {
                                   <i className={`bi ${order.delivery_type === 'delivery' ? 'bi-truck' : 'bi-bag'} fs-5 text-primary-bake`}></i>
                                 </div>
                                 <div className="flex-grow-1">
-                                  <small className="text-muted text-uppercase d-block mb-1" style={{fontSize: '0.7rem', letterSpacing: '0.5px'}}>Type</small>
-                                  <strong className="d-block text-capitalize">{order.delivery_type === 'delivery' ? 'Delivery' : 'Pickup'}</strong>
+                                  <small className="text-muted text-uppercase d-block mb-1" style={{fontSize: '0.7rem', letterSpacing: '0.5px'}}>{t('typeLabel')}</small>
+                                  <strong className="d-block text-capitalize">{order.delivery_type === 'delivery' ? t('deliveryLabel') : t('pickupLabel')}</strong>
                                 </div>
                               </div>
                             </div>
@@ -322,7 +321,7 @@ export default function OrdersPage() {
                             <div className="d-flex align-items-start gap-3">
                               <i className="bi bi-geo-alt-fill text-danger mt-1"></i>
                               <div>
-                                <small className="text-muted text-uppercase d-block mb-1" style={{fontSize: '0.7rem', letterSpacing: '0.5px'}}>Delivery Address</small>
+                                <small className="text-muted text-uppercase d-block mb-1" style={{fontSize: '0.7rem', letterSpacing: '0.5px'}}>{t('deliveryAddress')}</small>
                                 <strong>{order.address}</strong>
                               </div>
                             </div>
@@ -331,8 +330,8 @@ export default function OrdersPage() {
 
                         {/* Items Section */}
                         <div className="mb-4">
-                          <h6 className="fw-bold mb-3 text-uppercase" style={{fontSize: '0.85rem', letterSpacing: '0.5px'}}>
-                            <i className="bi bi-bag-fill me-2 text-primary-bake"></i>Order Items
+                            <h6 className="fw-bold mb-3 text-uppercase" style={{fontSize: '0.85rem', letterSpacing: '0.5px'}}>
+                            <i className="bi bi-bag-fill me-2 text-primary-bake"></i>{t('orderItems')}
                           </h6>
                           <div className="items-list">
                             {order.items && order.items.map((item, idx) => (
@@ -350,15 +349,15 @@ export default function OrdersPage() {
                         {/* Payment Summary */}
                         <div className="payment-summary p-3 rounded mb-4" style={{background: '#E8F8F2'}}>
                           <div className="d-flex justify-content-between mb-2">
-                            <span className="text-muted">Subtotal</span>
+                            <span className="text-muted">{t('subtotal')}</span>
                             <span className="fw-semibold">{formatCurrency(order.subtotal)}</span>
                           </div>
                           <div className="d-flex justify-content-between mb-3 pb-3 border-bottom">
-                            <span className="text-muted">Delivery Fee</span>
+                            <span className="text-muted">{t('deliveryFee')}</span>
                             <span className="fw-semibold">{formatCurrency(order.delivery_fee)}</span>
                           </div>
                           <div className="d-flex justify-content-between align-items-center">
-                            <span className="fw-bold fs-5">Total Amount</span>
+                            <span className="fw-bold fs-5">{t('totalAmount')}</span>
                             <span className="fw-bold fs-4 text-primary-bake">{formatCurrency(order.total_amount)}</span>
                           </div>
                         </div>
@@ -374,7 +373,7 @@ export default function OrdersPage() {
                             {updating === order.id ? (
                               <>
                                 <span className="spinner-border spinner-border-sm" role="status"></span>
-                                <span>Updating...</span>
+                                <span>{t('updating')}</span>
                               </>
                             ) : (
                               <>
@@ -388,7 +387,7 @@ export default function OrdersPage() {
                         {order.status === 'delivered' && (
                           <div className="alert alert-success mb-0 d-flex align-items-center gap-2">
                             <i className="bi bi-check-circle-fill fs-5"></i>
-                            <span className="fw-semibold">Order Completed</span>
+                            <span className="fw-semibold">{t('orderCompleted')}</span>
                           </div>
                         )}
 

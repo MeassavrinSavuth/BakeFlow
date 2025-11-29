@@ -2,12 +2,14 @@ import { formatDate } from '../utils/formatDate';
 import { statusColor } from '../utils/statusColor';
 import { formatCurrency } from '../utils/formatCurrency';
 import Link from 'next/link';
+import { useTranslation } from '../utils/i18n';
 
 export default function RecentOrdersTable({ orders, loading, error }) {
+  const { t } = useTranslation();
   return (
     <div className="card border-0 shadow-sm mb-4">
       <div className="card-body">
-        <h5 className="card-title mb-3"><i className="bi bi-clock-history me-2"/>Recent Orders</h5>
+        <h5 className="card-title mb-3"><i className="bi bi-clock-history me-2"/>{t('recentOrders')}</h5>
         {error && <div className="alert alert-danger mb-3">{error}</div>}
         {loading && (
           <div className="table-loading">
@@ -19,13 +21,13 @@ export default function RecentOrdersTable({ orders, loading, error }) {
             <table className="table table-striped table-hover align-middle">
               <thead className="table-light">
                 <tr>
-                  <th>Order ID</th>
-                  <th>Customer</th>
-                  <th>Cake</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th className="text-end">Total</th>
-                  <th className="text-end">Action</th>
+                  <th>{t('orderID')}</th>
+                  <th>{t('customer')}</th>
+                  <th>{t('cake')}</th>
+                  <th>{t('date')}</th>
+                  <th>{t('status')}</th>
+                  <th className="text-end">{t('total')}</th>
+                  <th className="text-end">{t('action')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -45,7 +47,7 @@ export default function RecentOrdersTable({ orders, loading, error }) {
                   </tr>
                 ))}
                 {orders.length === 0 && !error && (
-                  <tr><td colSpan={7} className="text-center text-muted py-4">No orders yet</td></tr>
+                  <tr><td colSpan={7} className="text-center text-muted py-4">{t('noOrdersYet')}</td></tr>
                 )}
               </tbody>
             </table>

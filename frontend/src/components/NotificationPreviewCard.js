@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from '../utils/i18n';
 
 export default function NotificationPreviewCard({ notification, onClose, onView }) {
   const [hiding, setHiding] = useState(false);
@@ -29,13 +30,14 @@ export default function NotificationPreviewCard({ notification, onClose, onView 
   const orders = notification.orders || [notification];
   const count = notification.count || orders.length;
   const firstOrder = orders[0];
+  const { t } = useTranslation();
 
   return (
     <div className={`bf-preview-card ${hiding ? 'hiding' : ''}`}>
       <div className="bf-preview-header">
         <div className="d-flex align-items-center gap-2">
           <i className="bi bi-bell-fill fs-5"></i>
-          <strong>{count === 1 ? 'New Order' : `${count} New Orders`}</strong>
+          <strong>{count === 1 ? t('newOrder') : `${count} ${t('newOrders')}`}</strong>
         </div>
         <button 
           className="btn btn-sm btn-link text-white p-0"
@@ -54,7 +56,7 @@ export default function NotificationPreviewCard({ notification, onClose, onView 
         {orders.slice(0, 3).map((order, idx) => (
           <div key={order.id} className={`${idx > 0 ? 'mt-2 pt-2 border-top border-light' : ''}`}>
             <div className="bf-preview-title">
-              Order #{order.id} • {order.customer}
+              {t('orderID')} #{order.id} • {order.customer}
             </div>
             <div className="bf-preview-text">
               {order.cake}
@@ -63,12 +65,12 @@ export default function NotificationPreviewCard({ notification, onClose, onView 
         ))}
         {count > 3 && (
           <div className="small text-muted mt-2">
-            …and {count - 3} more order{count - 3 > 1 ? 's' : ''}
+            …and {count - 3} more {t('ordersLabel')}
           </div>
         )}
         <div className="small text-muted mt-2">
           <i className="bi bi-clock me-1"></i>
-          Just now
+          {t('justNow')}
         </div>
       </div>
       <div className="bf-preview-footer">
@@ -76,7 +78,7 @@ export default function NotificationPreviewCard({ notification, onClose, onView 
           className="btn btn-sm btn-outline-secondary"
           onClick={handleClose}
         >
-          Dismiss
+          {t('dismiss')}
         </button>
         <button 
           className="btn btn-sm btn-dark"
@@ -88,7 +90,7 @@ export default function NotificationPreviewCard({ notification, onClose, onView 
           }}
         >
           <i className="bi bi-eye me-1"></i>
-          View {count > 1 ? 'Orders' : 'Order'}
+          {t('view')} {count > 1 ? t('ordersLabel') : t('orderID')}
         </button>
       </div>
     </div>

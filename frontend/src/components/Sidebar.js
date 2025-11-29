@@ -1,6 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useContext, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { LanguageContext } from '../contexts/LanguageContext';
+import { useTranslation } from '../utils/i18n';
 
 // Sidebar with collapse + bootstrap tooltips
 export default function Sidebar({ open, toggle }) {
@@ -14,14 +16,20 @@ export default function Sidebar({ open, toggle }) {
     }
   }, [open]);
 
+  const { lang, setLang } = useContext(LanguageContext)
+  const { t } = useTranslation();
+
+  // use keys so we can translate labels
   const navItems = [
-    { href: '/admin', icon: 'speedometer2', label: 'Dashboard' },
-    { href: '/admin/orders', icon: 'receipt', label: 'Orders' },
-    { href: '/admin/products', icon: 'box-seam', label: 'Products' },
-    { href: '/admin/customers', icon: 'people', label: 'Customers' },
-    { href: '/admin/analytics', icon: 'graph-up', label: 'Analytics' },
-    { href: '/admin/settings', icon: 'gear', label: 'Settings' }
+    { href: '/admin', icon: 'speedometer2', key: 'dashboard' },
+    { href: '/admin/orders', icon: 'receipt', key: 'orders' },
+    { href: '/admin/products', icon: 'box-seam', key: 'products' },
+    { href: '/admin/customers', icon: 'people', key: 'customers' },
+    { href: '/admin/analytics', icon: 'graph-up', key: 'analytics' },
+    { href: '/admin/settings', icon: 'gear', key: 'settings' }
   ];
+
+  
 
   return (
     <aside className={`bf-sidebar bg-white border-end ${open ? 'expanded' : 'collapsed'}`}>
@@ -46,25 +54,42 @@ export default function Sidebar({ open, toggle }) {
         <ul className="nav flex-column gap-2">
           {navItems.map(item => (
             <li key={item.href} className="nav-item">
-              <Link href={item.href} className={`nav-link text-secondary d-flex align-items-center bf-nav-link ${router.pathname === item.href ? 'active' : ''}`} data-bs-toggle={!open ? 'tooltip' : undefined} data-bs-placement="right" title={!open ? item.label : undefined}>
+              <Link href={item.href} className={`nav-link text-secondary d-flex align-items-center bf-nav-link ${router.pathname === item.href ? 'active' : ''}`} data-bs-toggle={!open ? 'tooltip' : undefined} data-bs-placement="right" title={!open ? t(item.key) : undefined}>
                 <i className={`bi bi-${item.icon} fs-5 me-2`}></i>
-                {open && <span>{item.label}</span>}
+                {open && <span>{t(item.key)}</span>}
               </Link>
             </li>
           ))}
         </ul>
       </nav>
       <div className="bf-sidebar-footer p-3 border-top">
-        <div className="d-flex align-items-center">
-          <div className="rounded-circle bg-primary-bake bg-opacity-10 p-2">
-            <i className="bi bi-person-circle fs-5 text-primary-bake"></i>
-          </div>
-          {open && (
-            <div className="ms-2 flex-grow-1">
-              <div className="fw-semibold small text-dark">Admin User</div>
-              <div className="text-muted small">admin@bakeflow.com</div>
+        <div className="d-flex align-items-center justify-content-between">
+          {/* Removed admin profile info per request. Replaced with flag dropdown for language selection. */}
+          <div>
+            <div className="d-flex align-items-center gap-2">
+              {open ? (
+                <>
+                  <button className={`btn btn-sm d-flex align-items-center ${lang === 'en' ? 'btn-primary text-white' : 'btn-outline-secondary'}`} onClick={() => setLang('en')} aria-label={t('english')}>
+                    <span style={{fontSize: '18px', lineHeight: 1}}>🇬🇧</span>
+                    <span className="ms-2 d-none d-md-inline">{t('english')}</span>
+                  </button>
+                  <button className={`btn btn-sm d-flex align-items-center ${lang === 'my' ? 'btn-primary text-white' : 'btn-outline-secondary'}`} onClick={() => setLang('my')} aria-label={t('myanmar')}>
+                    <span style={{fontSize: '18px', lineHeight: 1}}>🇲🇲</span>
+                    <span className="ms-2 d-none d-md-inline">{t('myanmar')}</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className={`btn btn-sm btn-link p-0 ${lang === 'en' ? 'text-primary' : 'text-secondary'}`} title={t('english')} onClick={() => setLang('en')} aria-label={t('english')}>
+                    <span style={{fontSize: '18px'}}>🇬🇧</span>
+                  </button>
+                  <button className={`btn btn-sm btn-link p-0 ${lang === 'my' ? 'text-primary' : 'text-secondary'}`} title={t('myanmar')} onClick={() => setLang('my')} aria-label={t('myanmar')}>
+                    <span style={{fontSize: '18px'}}>🇲🇲</span>
+                  </button>
+                </>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </aside>

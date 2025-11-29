@@ -1,4 +1,5 @@
 import { formatCurrency } from '../utils/formatCurrency';
+import { useTranslation } from '../utils/i18n';
 
 function Card({ title, value, icon, className }) {
   return (
@@ -19,6 +20,7 @@ function Card({ title, value, icon, className }) {
 }
 
 export default function SummaryCards({ stats, loading }) {
+  const { t } = useTranslation();
   if (loading) {
     return (
       <div className="row g-3 mb-4">
@@ -32,10 +34,10 @@ export default function SummaryCards({ stats, loading }) {
   }
   return (
     <div className="row g-3 mb-4">
-      <Card title="Total Orders" value={stats.totalOrders} icon="receipt" className="kpi-primary" />
-      <Card title="Total Revenue" value={formatCurrency(stats.totalRevenue)} icon="currency-dollar" className="kpi-accent" />
-      <Card title="Pending Orders" value={stats.pendingOrders} icon="hourglass-split" className="kpi-pending" />
-      <Card title="Completed Orders" value={stats.completedOrders} icon="check2-circle" className="kpi-complete" />
+      <Card title={t('totalOrders')} value={stats.totalOrders} icon="receipt" className="kpi-primary" />
+      <Card title={t('totalRevenue')} value={formatCurrency(stats.totalRevenue)} icon="currency-dollar" className="kpi-accent" />
+      <Card title={t('pendingOrders')} value={stats.pendingOrders} icon="hourglass-split" className="kpi-pending" />
+      <Card title={t('completedOrders')} value={stats.completedOrders} icon="check2-circle" className="kpi-complete" />
     </div>
   );
 }
