@@ -156,3 +156,63 @@ func IncrementPurchases(db *sql.DB, productID int) error {
 	_, err := db.Exec(query, productID)
 	return err
 }
+
+// GetActiveProducts returns active, non-deleted products (limited)
+func GetActiveProducts(db *sql.DB, limit int, offset int, category string, search string) ([]Product, error) {
+	query := `
+		SELECT id, name, description, category, price, stock, image_url, status, created_at, updated_at
+		FROM products
+		WHERE deleted_at IS NULL AND status = 'active'
+		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2
+	`
+	rows, err := db.Query(query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var products []Product
+	for rows.Next() {
+		var p Product
+		var desc sql.NullString
+		var img sql.NullString
+		if err := rows.Scan(&p.ID, &p.Name, &desc, &p.Category, &p.Price, &p.Stock, &img, &p.Status, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			p.Description = desc.String
+		}
+		if img.Valid {
+			p.ImageURL = img.String
+		}
+		products = append(products, p)
+	}
+	return products, rows.Err()
+}
+
+// GetProductByID fetches a single product by ID
+func GetProductByID(db *sql.DB, id int) (*Product, error) {
+	query := `
+		SELECT id, name, description, category, price, stock, image_url, status, created_at, updated_at
+		FROM products
+		WHERE id = $1 AND deleted_at IS NULL
+	`
+	var p Product
+	var desc sql.NullString
+	var img sql.NullString
+	err := db.QueryRow(query, id).Scan(&p.ID, &p.Name, &desc, &p.Category, &p.Price, &p.Stock, &img, &p.Status, &p.CreatedAt, &p.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if desc.Valid {
+		p.Description = desc.String
+	}
+	if img.Valid {
+		p.ImageURL = img.String
+	}
+	return &p, nil
+}

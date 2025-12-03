@@ -4,60 +4,48 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"bakeflow/models"
+	"bakeflow/configs"
 )
 
-// getProductElements returns all product carousel elements
+// getProductElements returns product carousel elements from the database
 func getProductElements() []Element {
-	return []Element{
-		{
-			Title:    ProductCatalog["Chocolate Cake"].Emoji + " " + ProductCatalog["Chocolate Cake"].Name,
-			ImageURL: ProductCatalog["Chocolate Cake"].ImageURL,
-			Subtitle: ProductCatalog["Chocolate Cake"].Description + " • " + ProductCatalog["Chocolate Cake"].Price,
-			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: "ORDER_CHOCOLATE_CAKE"}},
-		},
-		{
-			Title:    ProductCatalog["Vanilla Cake"].Emoji + " " + ProductCatalog["Vanilla Cake"].Name,
-			ImageURL: ProductCatalog["Vanilla Cake"].ImageURL,
-			Subtitle: ProductCatalog["Vanilla Cake"].Description + " • " + ProductCatalog["Vanilla Cake"].Price,
-			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: "ORDER_VANILLA_CAKE"}},
-		},
-		{
-			Title:    ProductCatalog["Red Velvet Cake"].Emoji + " " + ProductCatalog["Red Velvet Cake"].Name,
-			ImageURL: ProductCatalog["Red Velvet Cake"].ImageURL,
-			Subtitle: ProductCatalog["Red Velvet Cake"].Description + " • " + ProductCatalog["Red Velvet Cake"].Price,
-			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: "ORDER_RED_VELVET"}},
-		},
-		{
-			Title:    ProductCatalog["Coffee"].Emoji + " " + ProductCatalog["Coffee"].Name,
-			ImageURL: ProductCatalog["Coffee"].ImageURL,
-			Subtitle: ProductCatalog["Coffee"].Description + " • " + ProductCatalog["Coffee"].Price,
-			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: "ORDER_COFFEE"}},
-		},
-		{
-			Title:    ProductCatalog["Croissant"].Emoji + " " + ProductCatalog["Croissant"].Name,
-			ImageURL: ProductCatalog["Croissant"].ImageURL,
-			Subtitle: ProductCatalog["Croissant"].Description + " • " + ProductCatalog["Croissant"].Price,
-			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: "ORDER_CROISSANT"}},
-		},
-		{
-			Title:    ProductCatalog["Cinnamon Roll"].Emoji + " " + ProductCatalog["Cinnamon Roll"].Name,
-			ImageURL: ProductCatalog["Cinnamon Roll"].ImageURL,
-			Subtitle: ProductCatalog["Cinnamon Roll"].Description + " • " + ProductCatalog["Cinnamon Roll"].Price,
-			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: "ORDER_CINNAMON_ROLL"}},
-		},
-		{
-			Title:    ProductCatalog["Chocolate Cupcake"].Emoji + " " + ProductCatalog["Chocolate Cupcake"].Name,
-			ImageURL: ProductCatalog["Chocolate Cupcake"].ImageURL,
-			Subtitle: ProductCatalog["Chocolate Cupcake"].Description + " • " + ProductCatalog["Chocolate Cupcake"].Price,
-			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: "ORDER_CHOCOLATE_CUPCAKE"}},
-		},
-		{
-			Title:    ProductCatalog["Bread"].Emoji + " " + ProductCatalog["Bread"].Name,
-			ImageURL: ProductCatalog["Bread"].ImageURL,
-			Subtitle: ProductCatalog["Bread"].Description + " • " + ProductCatalog["Bread"].Price,
-			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: "ORDER_BREAD"}},
-		},
+	products, err := models.GetActiveProducts(configs.DB, 10, 0, "", "")
+	if err != nil {
+		return []Element{}
 	}
+	var elements []Element
+	for _, p := range products {
+		price := fmt.Sprintf("$%.2f", p.Price)
+		img := p.ImageURL
+		if img == "" {
+			img = "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=200&fit=crop"
+		}
+		emoji := "🍰"
+		switch strings.ToLower(p.Category) {
+		case "cakes":
+			emoji = "🎂"
+		case "cupcakes":
+			emoji = "🧁"
+		case "coffee":
+			emoji = "☕"
+		case "bread":
+			emoji = "🍞"
+		case "muffins":
+			emoji = "🧁"
+		case "tarts":
+			emoji = "🥧"
+		case "pastries":
+			emoji = "🥐"
+		}
+		elements = append(elements, Element{
+			Title:    emoji + " " + p.Name,
+			ImageURL: img,
+			Subtitle: fmt.Sprintf("%s • %s", p.Description, price),
+			Buttons:  []Button{{Type: "postback", Title: "🛒 Order", Payload: fmt.Sprintf("ORDER_PRODUCT_%d", p.ID)}},
+		})
+	}
+	return elements
 }
 
 // showAbout displays company information and help instructions in user's language

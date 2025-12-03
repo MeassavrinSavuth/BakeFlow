@@ -3,6 +3,8 @@ package controllers
 import (
 	"strconv"
 	"strings"
+	"bakeflow/models"
+	"bakeflow/configs"
 )
 
 // handlePostback processes button clicks (postback payloads)
@@ -260,11 +262,45 @@ func handlePostback(userID, payload string) {
 		ResetUserState(userID)
 
 	default:
+		// Dynamic product ordering by ID
+		if strings.HasPrefix(payload, "ORDER_PRODUCT_") {
+			idStr := strings.TrimPrefix(payload, "ORDER_PRODUCT_")
+			if pid, err := strconv.Atoi(idStr); err == nil {
+				if !checkBusinessHours(userID) {
+					return
+				}
+				if p, err := models.GetProductByID(configs.DB, pid); err == nil && p != nil {
+					emoji := "🍰"
+					switch strings.ToLower(p.Category) {
+					case "cakes":
+						emoji = "🎂"
+					case "cupcakes":
+						emoji = "🧁"
+					case "coffee":
+						emoji = "☕"
+					case "bread":
+						emoji = "🍞"
+					case "muffins":
+						emoji = "🧁"
+					case "tarts":
+						emoji = "🥧"
+					case "pastries":
+						emoji = "🥐"
+					}
+					state.CurrentProduct = p.Name
+					state.CurrentEmoji = emoji
+					state.State = "awaiting_quantity"
+					SendTypingIndicator(userID, true)
+					askQuantity(userID)
+					return
+				}
+			}
+		}
+
 		// Check for dynamic payloads (REORDER_123, RATE_ORDER_123)
 		if strings.HasPrefix(payload, "REORDER_") {
 			orderIDStr := strings.TrimPrefix(payload, "REORDER_")
 			if orderID, err := strconv.Atoi(orderIDStr); err == nil {
-				// Check business hours before reordering
 				if !checkBusinessHours(userID) {
 					return
 				}

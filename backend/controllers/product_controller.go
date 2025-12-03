@@ -292,10 +292,12 @@ func (pc *ProductController) UpdateProduct(w http.ResponseWriter, r *http.Reques
 	var oldProduct models.Product
 	query := `SELECT id, name, description, category, price, stock, image_url, status 
 	          FROM products WHERE id = $1 AND deleted_at IS NULL`
+	var desc sql.NullString
+	var img sql.NullString
 	err = pc.DB.QueryRow(query, id).Scan(
-		&oldProduct.ID, &oldProduct.Name, &oldProduct.Description, 
+		&oldProduct.ID, &oldProduct.Name, &desc,
 		&oldProduct.Category, &oldProduct.Price, &oldProduct.Stock,
-		&oldProduct.ImageURL, &oldProduct.Status,
+		&img, &oldProduct.Status,
 	)
 	if err == sql.ErrNoRows {
 		respondWithError(w, http.StatusNotFound, "Product not found", nil)
@@ -304,6 +306,12 @@ func (pc *ProductController) UpdateProduct(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch product", err)
 		return
+	}
+	if desc.Valid {
+		oldProduct.Description = desc.String
+	}
+	if img.Valid {
+		oldProduct.ImageURL = img.String
 	}
 
 	// Decode new product data
