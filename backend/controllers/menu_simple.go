@@ -14,17 +14,17 @@ func showMainMenuSimple(userID string) {
 			Buttons: []Button{
 				{
 					Type:    "postback",
-					Title:   "🛒 အော်ဒါစတင်မယ်",
+					Title:   "🛒 စတုံအိုး မှာယူမယ်",
+					Payload: "QUICK_SHOP",
+				},
+				{
+					Type:    "postback",
+					Title:   "📋 အော်ဒါရှည်း",
 					Payload: "MENU_ORDER_PRODUCTS",
 				},
 				{
 					Type:    "postback",
-					Title:   "ℹ️ အကြောင်းအရာ",
-					Payload: "MENU_ABOUT",
-				},
-				{
-					Type:    "postback",
-					Title:   "❓ အကူအညီ",
+					Title:   "ℹ️ အကူအညီ",
 					Payload: "MENU_HELP",
 				},
 			},
@@ -36,13 +36,13 @@ func showMainMenuSimple(userID string) {
 			Buttons: []Button{
 				{
 					Type:    "postback",
-					Title:   "🛒 Start Order",
-					Payload: "MENU_ORDER_PRODUCTS",
+					Title:   "🛒 Quick Cart",
+					Payload: "QUICK_SHOP",
 				},
 				{
 					Type:    "postback",
-					Title:   "ℹ️ About",
-					Payload: "MENU_ABOUT",
+					Title:   "📋 Full Order",
+					Payload: "MENU_ORDER_PRODUCTS",
 				},
 				{
 					Type:    "postback",

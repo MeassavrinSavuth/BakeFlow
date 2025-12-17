@@ -118,9 +118,12 @@ type Element struct {
 }
 
 type Button struct {
-	Type    string `json:"type"`
-	Title   string `json:"title"`
-	Payload string `json:"payload"`
+	Type                string `json:"type"`
+	Title               string `json:"title"`
+	Payload             string `json:"payload,omitempty"`
+	URL                 string `json:"url,omitempty"`
+	WebviewHeightRatio  string `json:"webview_height_ratio,omitempty"`
+	MessengerExtensions bool   `json:"messenger_extensions,omitempty"`
 }
 
 // Webhook payload structures

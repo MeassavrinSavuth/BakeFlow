@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"log"
 	"time"
 
 	"bakeflow/configs"
@@ -46,6 +47,7 @@ type Rating struct {
 // GetAllOrders returns all orders from the database with their items
 
 func GetAllOrders() ([]Order, error) {
+	log.Println("🔍 Querying orders table...")
 	rows, err := configs.DB.Query(`
 		SELECT id, customer_name,
 		       COALESCE(delivery_type, 'pickup') as delivery_type,
@@ -57,16 +59,19 @@ func GetAllOrders() ([]Order, error) {
 		ORDER BY id DESC
 	`)
 	if err != nil {
+		log.Printf("❌ Query failed: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
 
+	log.Println("✅ Query executed, scanning rows...")
 	var orders []Order
 	for rows.Next() {
 		var o Order
 		err := rows.Scan(&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status, &o.TotalItems,
 			&o.Subtotal, &o.DeliveryFee, &o.TotalAmount, &o.ReorderedFrom, &o.RatingID, &o.SenderID, &o.CreatedAt, &o.CompletedAt)
 		if err != nil {
+			log.Printf("❌ Scan error: %v", err)
 			return nil, err
 		}
 		
@@ -78,6 +83,8 @@ func GetAllOrders() ([]Order, error) {
 		
 		orders = append(orders, o)
 	}
+	
+	log.Printf("📦 Loaded %d orders", len(orders))
 
 	return orders, nil
 }

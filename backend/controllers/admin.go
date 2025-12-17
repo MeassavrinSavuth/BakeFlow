@@ -28,6 +28,8 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 	// Set JSON header before any response
 	w.Header().Set("Content-Type", "application/json")
 	
+	log.Printf("📋 Fetching all orders from database...")
+	
 	// Get all orders from database
 	orders, err := models.GetAllOrders()
 	if err != nil {
@@ -41,6 +43,8 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	log.Printf("✅ Found %d orders", len(orders))
 
 	// Return orders as JSON
 	response := map[string]interface{}{
