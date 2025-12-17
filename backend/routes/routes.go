@@ -51,6 +51,12 @@ func SetupRoutes() http.Handler {
 		w.Write([]byte("BakeFlow Bot is running! ✅"))
 	}).Methods("GET")
 
+	// Serve static HTML for webview order form
+	router.HandleFunc("/order-form.html", func(w http.ResponseWriter, r *http.Request) {
+		// Path is relative to where you run 'go run main.go' (backend directory)
+		http.ServeFile(w, r, "../frontend/public/order-form.html")
+	}).Methods("GET")
+
 	// Messenger webhook endpoint
 	// GET: Facebook verification
 	// POST: Receive messages from users
@@ -66,6 +72,9 @@ func SetupRoutes() http.Handler {
 
 	// Orders API
 	router.HandleFunc("/orders", controllers.GetOrders).Methods("GET")
+	
+	// Chat Order API (from webview)
+	router.HandleFunc("/api/chat/orders", controllers.CreateChatOrder).Methods("POST", "OPTIONS")
 	
 	// Admin API Routes - Orders
 	router.HandleFunc("/api/admin/orders", controllers.AdminGetOrders).Methods("GET")

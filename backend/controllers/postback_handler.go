@@ -240,6 +240,24 @@ func handlePostback(userID, payload string) {
 		SendMessage(userID, "━━━━━━━━━━━━━━━━━")
 		SendMessage(userID, "Ready to start fresh? Type 'menu' to see our products!")
 
+	// Mini Quick Order Form
+	case "QUICK_SHOP":
+		state.State = "quick_ordering"
+		ShowWebviewOrderForm(userID) // Opens mini web app inside Messenger
+
+	case "QUICK_SHOW_CART":
+		showQuickCartSummary(userID)
+
+	case "QUICK_CHECKOUT":
+		handleQuickCheckout(userID)
+
+	case "QUICK_ADD_MORE":
+		state.State = "quick_ordering"
+		ShowMiniOrderForm(userID)
+
+	case "QUICK_CLEAR_CART":
+		handleQuickClearCart(userID)
+
 	// Special actions
 	case "SHOW_MENU":
 		showMenu(userID)
@@ -260,11 +278,22 @@ func handlePostback(userID, payload string) {
 		ResetUserState(userID)
 
 	default:
-		// Check for dynamic payloads (REORDER_123, RATE_ORDER_123)
+		// Check for dynamic payloads
+		if strings.HasPrefix(payload, "QUICK_ADD_") {
+			productKey := strings.TrimPrefix(payload, "QUICK_ADD_")
+			handleQuickAddProduct(userID, productKey)
+			return
+		}
+
+		if strings.HasPrefix(payload, "QUICK_VIEW_") {
+			productKey := strings.TrimPrefix(payload, "QUICK_VIEW_")
+			handleQuickAddProduct(userID, productKey)
+			return
+		}
+
 		if strings.HasPrefix(payload, "REORDER_") {
 			orderIDStr := strings.TrimPrefix(payload, "REORDER_")
 			if orderID, err := strconv.Atoi(orderIDStr); err == nil {
-				// Check business hours before reordering
 				if !checkBusinessHours(userID) {
 					return
 				}
