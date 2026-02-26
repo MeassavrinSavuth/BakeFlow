@@ -446,7 +446,8 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
         notes: combinedNotes,
         schedule: null, // Regular "Order Now" never sends a schedule
         geo: window.getGeo(),
-        delivery_directions: document.getElementById('deliveryDirections')?.value.trim() || ''
+        delivery_directions: document.getElementById('deliveryDirections')?.value.trim() || '',
+        payment_method: paymentMethod || 'cash'
     };
 
     // Include promotion data if one was applied
@@ -807,6 +808,7 @@ async function submitPreorder(preorder) {
     } catch (e) {
         window.__preferredPayMethod = 'cash';
     }
+    orderData.payment_method = window.__preferredPayMethod || 'cash';
 
     isSubmittingPreorder = true;
     const btn = document.getElementById('preorderSubmitBtn');
@@ -1028,6 +1030,7 @@ async function submitPreorderDirect(opts) {
     } catch (e) {
         window.__preferredPayMethod = 'cash';
     }
+    orderData.payment_method = window.__preferredPayMethod || 'cash';
 
     isSubmittingPreorder = true;
     const btn = document.getElementById('preorderSubmitBtn');
@@ -1285,6 +1288,7 @@ function sendCustomOrderChoice(choice, existingOrderID, orderData, name, phone) 
         delivery_type: orderData.delivery_type || '',
         address: orderData.address || '',
         user_id: userId,
+        payment_method: window.__preferredPayMethod || 'cash'
     };
 
     const tokenParam = tok ? `?t=${encodeURIComponent(tok)}` : '';

@@ -535,7 +535,8 @@ async function submitOrder() {
         notes: notes,
         schedule: pendingSchedule || null,
         geo: geo,
-        delivery_directions: document.getElementById('deliveryDirections')?.value.trim() || ''
+        delivery_directions: document.getElementById('deliveryDirections')?.value.trim() || '',
+        payment_method: window.__preferredPayMethod || 'cash'
     };
 
     // Include promotion data if one was applied
@@ -718,7 +719,8 @@ function sendOrderChoice(choice, existingOrderID, originalOrderData, name, phone
         customer_name: name,
         delivery_type: originalOrderData.delivery_type,
         address: originalOrderData.address,
-        user_id: userId  // Include user_id for fallback authentication
+        user_id: userId,
+        payment_method: window.__preferredPayMethod || 'cash'
     };
     
     // Get token from URL if it exists

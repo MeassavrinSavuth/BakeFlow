@@ -33,6 +33,7 @@ type ChatOrderRequest struct {
 	Discount         float64            `json:"discount"`
 	ForceNewOrder    bool               `json:"force_new_order"`
 	OrderType        string             `json:"order_type"`
+	PaymentMethod    string             `json:"payment_method"`
 }
 
 type ChatOrderItem struct {
@@ -51,13 +52,14 @@ type ChatOrderResponse struct {
 }
 
 type OrderChoiceRequest struct {
-	UserID       string          `json:"user_id"`
-	Choice       string          `json:"choice"`   // "add_to_existing" or "new_order"
-	OrderID      int             `json:"order_id"` // for add_to_existing choice
-	Items        []ChatOrderItem `json:"items"`
-	CustomerName string          `json:"customer_name"`
-	DeliveryType string          `json:"delivery_type"`
-	Address      string          `json:"address"`
+	UserID        string          `json:"user_id"`
+	Choice        string          `json:"choice"`   // "add_to_existing" or "new_order"
+	OrderID       int             `json:"order_id"` // for add_to_existing choice
+	Items         []ChatOrderItem `json:"items"`
+	CustomerName  string          `json:"customer_name"`
+	DeliveryType  string          `json:"delivery_type"`
+	Address       string          `json:"address"`
+	PaymentMethod string          `json:"payment_method"`
 }
 
 // ─── Order Type System ─────────────────────────────────────
@@ -857,6 +859,9 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 		frontendURL := resolveFrontendBaseURL()
 
 		paymentLink := fmt.Sprintf("%s/order/%d", frontendURL, orderID)
+		if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) == "scan" {
+			paymentLink = fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
+		}
 
 		title := "✅ Order Confirmed"
 		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f\n\nReady to pay? Tap Pay Now below", orderID, itemSummary, subtotal)
@@ -1400,8 +1405,12 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 
 		frontendURL := resolveFrontendBaseURL()
 
+		payURL := fmt.Sprintf("%s/order/%d", frontendURL, orderID)
+		if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) == "scan" {
+			payURL = fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
+		}
 		buttons := []Button{
-			{Type: "web_url", Title: "Pay Now", URL: fmt.Sprintf("%s/order/%d", frontendURL, orderID)},
+			{Type: "web_url", Title: "Pay Now", URL: payURL},
 			{Type: "postback", Title: "Track Order", Payload: trackPayload},
 			{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"},
 		}
