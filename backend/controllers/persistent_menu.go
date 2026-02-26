@@ -31,11 +31,6 @@ func SetupPersistentMenu() error {
 			},
 			{
 				"type":    "postback",
-				"title":   "📋 Order History",
-				"payload": "MENU_ORDER_HISTORY",
-			},
-			{
-				"type":    "postback",
 				"title":   "ℹ️ About & Help",
 				"payload": "MENU_ABOUT",
 			},
@@ -51,11 +46,6 @@ func SetupPersistentMenu() error {
 				"type":    "postback",
 				"title":   "🛒 အော်ဒါမှာမယ်",
 				"payload": "MENU_ORDER",
-			},
-			{
-				"type":    "postback",
-				"title":   "📋 မှာထားမှုများ",
-				"payload": "MENU_ORDER_HISTORY",
 			},
 			{
 				"type":    "postback",

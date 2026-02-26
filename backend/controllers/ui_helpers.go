@@ -73,16 +73,7 @@ func showAbout(userID string) {
 
 	if state.Language == "my" {
 		aboutMsg = "🏪 ကျွန်ုပ်တို့အကြောင်း\n\n" +
-			"BakeFlow သည် လတ်ဆတ်သော မုန့်များကို နေ့စဉ် ဖုတ်လုပ်သော မုန့်ဆိုင်ဖြစ်ပါသည်။\n\n" +
-			"🎂 ကျွန်ုပ်တို့၏ အထူးမုန့်များ:\n" +
-			"• ချောကလက် ကိတ်မုန့်\n" +
-			"• ဗနီလာ ကိတ်မုန့်\n" +
-			"• ဆော့ဘီ ကိတ်မုန့်\n" +
-			"• ချိစ်ကိတ်မုန့်\n" +
-			"• နီမုန့်\n" +
-			"• ချောကလက် ကွတ်ကီး\n" +
-			"• ဗာတာကွတ်ကီး\n" +
-			"• အာလုမွန့်\n\n" +
+			"Homemade Homebake သည် လတ်ဆတ်သော မုန့်များကို နေ့စဉ် ဖုတ်လုပ်သော မုန့်ဆိုင်ဖြစ်ပါသည်။\n\n" +
 			"📍 တည်နေရာ: ရန်ကုန်မြို့\n" +
 			"⏰ ဖွင့်ချိန်: နံနက် 8:00 - ညနေ 8:00\n" +
 			"📞 ဆက်သွယ်ရန်: +95 9 XXX XXX XXX"
@@ -91,16 +82,7 @@ func showAbout(userID string) {
 			"🛒 အော်ဒါမှာရန် 'Order' ခလုတ်ကို တို့ခြင်းပြီး ဝက်ဗြူ ဖောင်မ အသုံးပြုပါ!"
 	} else {
 		aboutMsg = "🏪 About Us\n\n" +
-			"BakeFlow is your neighborhood bakery, baking fresh daily!\n\n" +
-			"🎂 Our Specialties:\n" +
-			"• Chocolate Cake\n" +
-			"• Vanilla Cake\n" +
-			"• Strawberry Cake\n" +
-			"• Cheesecake\n" +
-			"• Red Velvet Cake\n" +
-			"• Chocolate Cookies\n" +
-			"• Butter Cookies\n" +
-			"• Almond Croissant\n\n" +
+			"Homemade Homebake is your neighborhood bakery, baking fresh daily!\n\n" +
 			"📍 Location: Yangon, Myanmar\n" +
 			"⏰ Hours: 8:00 AM - 8:00 PM\n" +
 			"📞 Contact: +95 9 XXX XXX XXX"
