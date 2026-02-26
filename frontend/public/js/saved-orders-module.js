@@ -27,10 +27,23 @@ function renderSavedOrders() {
     if (savedSummary) savedSummary.style.display = 'block';
     if (sectionDivider) sectionDivider.style.display = 'block';
     
-    reorderGrid.innerHTML = list.slice(0, 3).map((o, idx) => {
+    const displayList = list.filter(o => {
         const items = o.items || [];
         const itemCount = items.reduce((s, it) => s + (it.qty || 1), 0);
-        // Fix NaN: look up price from products array if missing
+        const total = items.reduce((s, it) => {
+            let price = it.price;
+            if (typeof price !== 'number' || isNaN(price)) {
+                const prod = products.find(p => p.id == it.id || (p.name && p.name.toLowerCase() === (it.name || '').toLowerCase()));
+                price = prod ? prod.price : 0;
+            }
+            return s + (price * (it.qty || 1));
+        }, 0);
+        return itemCount > 0 && total > 0;
+    });
+
+    reorderGrid.innerHTML = displayList.slice(0, 3).map((o, idx) => {
+        const items = o.items || [];
+        const itemCount = items.reduce((s, it) => s + (it.qty || 1), 0);
         const total = items.reduce((s, it) => {
             let price = it.price;
             if (typeof price !== 'number' || isNaN(price)) {
@@ -60,7 +73,7 @@ function renderSavedOrders() {
                     <span class="reorder-meta-item"><i data-lucide="package"></i> ${itemCount} items</span>
                     <span class="reorder-meta-item"><i data-lucide="clock"></i> ${escapeHtml(lastOrdered)}</span>
                 </div>
-                <div class="reorder-price">$${total.toFixed(2)}</div>
+                <div class="reorder-price">Ks ${total.toFixed(2)}</div>
             </div>
             <div class="reorder-actions" onclick="event.stopPropagation();">
                 <button class="reorder-btn primary" onclick="applySavedOrder(${idx})">

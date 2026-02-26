@@ -22,6 +22,7 @@ import (
 	"bakeflow/models"
 
 	"github.com/gorilla/mux"
+	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -535,10 +536,103 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	paymentMap := make(map[int]map[string]string)
+	if len(orders) > 0 {
+		ids := make([]int, 0, len(orders))
+		for _, order := range orders {
+			ids = append(ids, order.ID)
+		}
+		rows, err := configs.DB.Query(`
+			SELECT DISTINCT ON (order_id) order_id, COALESCE(method, '') as method, COALESCE(status, '') as status
+			FROM payments
+			WHERE order_id = ANY($1)
+			ORDER BY order_id, created_at DESC
+		`, pq.Array(ids))
+		if err == nil {
+			for rows.Next() {
+				var orderID int
+				var method, status string
+				if scanErr := rows.Scan(&orderID, &method, &status); scanErr == nil {
+					paymentMap[orderID] = map[string]string{
+						"method": strings.ToLower(strings.TrimSpace(method)),
+						"status": strings.ToLower(strings.TrimSpace(status)),
+					}
+				}
+			}
+			rows.Close()
+		}
+	}
+
+	extractPhone := func(value string) string {
+		raw := strings.TrimSpace(value)
+		if raw == "" {
+			return ""
+		}
+		start := strings.LastIndex(raw, "(")
+		end := strings.LastIndex(raw, ")")
+		if start >= 0 && end > start {
+			phone := strings.TrimSpace(raw[start+1 : end])
+			if phone != "" {
+				return phone
+			}
+		}
+		return ""
+	}
+
+	phoneBySender := make(map[string]string)
+	for _, order := range orders {
+		senderID := strings.TrimSpace(order.SenderID)
+		if senderID == "" {
+			continue
+		}
+		if _, ok := phoneBySender[senderID]; ok {
+			continue
+		}
+		phones, err := models.GetCustomerPhones(senderID)
+		if err == nil && len(phones) > 0 {
+			phoneBySender[senderID] = phones[0]
+		} else {
+			phoneBySender[senderID] = ""
+		}
+	}
+
+	type adminOrder struct {
+		models.Order
+		PaymentStatus string `json:"payment_status"`
+		PaymentMethod string `json:"payment_method"`
+		CustomerPhone string `json:"customer_phone"`
+	}
+	responseOrders := make([]adminOrder, 0, len(orders))
+	for _, order := range orders {
+		method := "cash"
+		status := "none"
+		if meta, ok := paymentMap[order.ID]; ok {
+			if meta["status"] != "" {
+				status = meta["status"]
+			}
+			if meta["method"] != "" {
+				method = "scan"
+			}
+		}
+		phone := ""
+		if senderID := strings.TrimSpace(order.SenderID); senderID != "" {
+			phone = strings.TrimSpace(phoneBySender[senderID])
+		}
+		if phone == "" {
+			phone = extractPhone(order.CustomerName)
+		}
+		responseOrders = append(responseOrders, adminOrder{
+			Order:         order,
+			PaymentStatus: status,
+			PaymentMethod: method,
+			CustomerPhone: phone,
+		})
+	}
+
 	// Return orders as JSON
 	response := map[string]interface{}{
-		"orders": orders,
-		"total":  len(orders),
+		"orders": responseOrders,
+		"total":  len(responseOrders),
 	}
 
 	json.NewEncoder(w).Encode(response)

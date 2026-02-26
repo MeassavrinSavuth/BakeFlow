@@ -68,25 +68,28 @@ function normalizeRecentOrdersFromAPI(apiOrders) {
             const qty = Number(it.quantity != null ? it.quantity : it.qty);
             const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
             const price = Number(it.price);
-            const pid = findProductIdByName(name);
+            const pid = it.product_id != null ? Number(it.product_id) : findProductIdByName(name);
 
             const prod = pid != null && Array.isArray(window.products)
                 ? window.products.find(p => p.id == pid)
                 : null;
 
             return {
-                id: pid,
+                id: Number.isFinite(pid) ? pid : null,
+                product_id: Number.isFinite(pid) ? pid : null,
                 qty: q,
                 name: prod && prod.name ? prod.name : name,
                 price: Number.isFinite(price) && price >= 0 ? price : (prod ? Number(prod.price) || 0 : 0),
-                image: prod && prod.image_url ? prod.image_url : ''
+                image: (it.image_url || it.image || '') || (prod && prod.image_url ? prod.image_url : '')
             };
-        }).filter(it => it.id != null);
+        });
 
         const ts = o.created_at ? new Date(o.created_at).getTime() : 0;
         return {
             order_id: o.id,
             timestamp: Number.isFinite(ts) && ts > 0 ? ts : Date.now(),
+            total_amount: Number(o.total_amount),
+            total_items: Number(o.total_items),
             items: normalizedItems
         };
     });
@@ -164,63 +167,70 @@ async function renderRecentOrders() {
 
     reorderSection.style.display = 'block';
 
-    const expanded = isRecentOrdersExpanded();
-    const visibleCount = expanded ? Math.min(list.length, 10) : 1;
+    const visibleCount = 1;
+    if (toggleBtn) toggleBtn.style.display = 'none';
 
-    if (toggleBtn) {
-        if (list.length <= 1) {
-            toggleBtn.style.display = 'none';
-        } else {
-            toggleBtn.style.display = 'flex';
-            toggleBtn.innerHTML = expanded
-                ? '<span>Hide previous</span><i data-lucide="chevron-up" style="width:14px;height:14px;"></i>'
-                : '<span>View previous</span><i data-lucide="chevron-down" style="width:14px;height:14px;"></i>';
+    const displayList = list.map((o, index) => ({ ...o, __index: index })).filter(o => {
+        const items = Array.isArray(o.items) ? o.items : [];
+        const itemCount = items.reduce((s, it) => s + (it.qty || 1), 0);
+        const totalItems = Number(o.total_items);
+        const totalAmount = Number(o.total_amount);
+        const hasItems = itemCount > 0 || (Number.isFinite(totalItems) && totalItems > 0);
+        const hasTotal = Number.isFinite(totalAmount) && totalAmount > 0;
+        return hasItems && hasTotal;
+    });
 
-            if (!toggleBtn.__bfWired) {
-                toggleBtn.__bfWired = true;
-                toggleBtn.addEventListener('click', async (e) => {
-                    e.preventDefault();
-                    setRecentOrdersExpanded(!isRecentOrdersExpanded());
-                    await renderRecentOrders();
-                });
-            }
-        }
+    if (displayList.length === 0) {
+        reorderSection.style.display = 'none';
+        if (toggleBtn) toggleBtn.style.display = 'none';
+        updateTopDividerVisibility();
+        return;
     }
 
-    reorderGrid.innerHTML = list.slice(0, visibleCount).map((o, idx) => {
+    const slicedList = displayList.slice(0, visibleCount);
+    reorderGrid.innerHTML = slicedList.map((o, idx) => {
         const items = Array.isArray(o.items) ? o.items : [];
         const itemCount = items.reduce((s, it) => s + (it.qty || 1), 0);
         const total = items.reduce((s, it) => {
             const price = typeof it.price === 'number' && !isNaN(it.price) ? it.price : 0;
             return s + (price * (it.qty || 1));
         }, 0);
+        const totalAmount = Number(o.total_amount);
+        const totalItems = Number(o.total_items);
+        const displayTotal = Number.isFinite(totalAmount) && totalAmount > 0 ? totalAmount : total;
+        const displayItemCount = itemCount > 0 ? itemCount : (Number.isFinite(totalItems) ? totalItems : 0);
         const lastOrdered = o.timestamp ? timeAgo(o.timestamp) : 'Recently';
 
         let thumbsHtml = '';
         const thumbItems = items.slice(0, 3);
-        thumbItems.forEach(it => {
-            const imgSrc = it.image || 'https://placehold.co/80x80/f5f3ef/888?text=🧁';
-            thumbsHtml += `<img src="${escapeHtml(imgSrc)}" alt="" class="reorder-thumb" onerror="this.src='https://placehold.co/80x80/f5f3ef/888?text=🧁'">`;
-        });
-        if (items.length > 3) {
-            thumbsHtml += `<div class="reorder-thumb-more">+${items.length - 3}</div>`;
+        if (thumbItems.length === 0) {
+            thumbsHtml = `<img src="https://placehold.co/80x80/f5f3ef/888?text=🧁" alt="" class="reorder-thumb">`;
+        } else {
+            thumbItems.forEach(it => {
+                const imgSrc = it.image || 'https://placehold.co/80x80/f5f3ef/888?text=🧁';
+                thumbsHtml += `<img src="${escapeHtml(imgSrc)}" alt="" class="reorder-thumb" onerror="this.src='https://placehold.co/80x80/f5f3ef/888?text=🧁'">`;
+            });
+            if (items.length > 3) {
+                thumbsHtml += `<div class="reorder-thumb-more">+${items.length - 3}</div>`;
+            }
         }
 
         const title = o.order_id ? `Order #${escapeHtml(String(o.order_id))}` : 'Recent order';
 
+        const sourceIndex = Number.isFinite(o.__index) ? o.__index : idx;
         return `
-        <div class="reorder-card" onclick="applyRecentOrder(${idx})">
+        <div class="reorder-card" onclick="applyRecentOrder(${sourceIndex})">
             <div class="reorder-thumbs">${thumbsHtml}</div>
             <div class="reorder-content">
                 <div class="reorder-name">${title}</div>
                 <div class="reorder-meta">
-                    <span class="reorder-meta-item"><i data-lucide="package"></i> ${itemCount} items</span>
+                    <span class="reorder-meta-item"><i data-lucide="package"></i> ${displayItemCount} items</span>
                     <span class="reorder-meta-item"><i data-lucide="clock"></i> ${escapeHtml(lastOrdered)}</span>
                 </div>
-                <div class="reorder-price">$${total.toFixed(2)}</div>
+                <div class="reorder-price">Ks ${displayTotal.toFixed(2)}</div>
             </div>
             <div class="reorder-actions" onclick="event.stopPropagation();">
-                <button class="reorder-btn primary" onclick="applyRecentOrder(${idx})">
+                <button class="reorder-btn primary" onclick="applyRecentOrder(${sourceIndex})">
                     <i data-lucide="shopping-cart"></i> Order
                 </button>
             </div>

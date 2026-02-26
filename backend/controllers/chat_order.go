@@ -3,6 +3,7 @@ package controllers
 import (
 	"bakeflow/configs"
 	"bakeflow/models"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -137,6 +138,16 @@ func isCustomOrder(orderID int) bool {
 		JOIN products p ON p.name = oi.product
 		WHERE oi.order_id = $1 AND COALESCE(p.requires_advance_notice, false) = true
 	`, orderID).Scan(&count)
+	if err == nil && count > 0 {
+		return true
+	}
+
+	// Last fallback: custom cake items may store "Custom" in name or notes
+	err = configs.DB.QueryRow(`
+		SELECT COUNT(*) FROM order_items
+		WHERE order_id = $1
+		  AND (LOWER(product) LIKE '%custom%' OR LOWER(COALESCE(note, '')) LIKE '%custom cake%')
+	`, orderID).Scan(&count)
 	return err == nil && count > 0
 }
 
@@ -150,6 +161,15 @@ func hasPaidPayment(orderID int) bool {
 	return normalized == "pending" || normalized == "verified" || normalized == "confirmed" || normalized == "paid"
 }
 
+func getLatestPaymentInfo(orderID int) (string, string, bool) {
+	var method, status sql.NullString
+	err := configs.DB.QueryRow("SELECT method, status FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1", orderID).Scan(&method, &status)
+	if err != nil {
+		return "", "", false
+	}
+	return strings.ToLower(strings.TrimSpace(method.String)), strings.ToLower(strings.TrimSpace(status.String)), true
+}
+
 // canCreateOrder validates if a user can place a new order (simple Food Panda-style rules)
 // Custom cake orders and regular orders are independent — they don't block each other.
 func canCreateOrder(userID string, orderType OrderType) (bool, string, []*models.Order) {
@@ -158,20 +178,25 @@ func canCreateOrder(userID string, orderType OrderType) (bool, string, []*models
 
 	switch orderType {
 	case OrderTypeCustom:
-		// Rule: Only 1 custom cake order at a time (ignore regular orders)
+		var modifiableOrders []*models.Order
 		for _, order := range existingOrders {
-			if isCustomOrder(order.ID) {
-				if hasPaidPayment(order.ID) {
+			if !isCustomOrder(order.ID) {
+				continue
+			}
+			status := strings.ToLower(strings.TrimSpace(order.Status))
+			if status != "pending" {
+				continue
+			}
+			_, payStatus, hasPayment := getLatestPaymentInfo(order.ID)
+			if hasPayment {
+				if payStatus == "verified" || payStatus == "confirmed" || payStatus == "paid" {
 					continue
 				}
-				status := strings.ToLower(strings.TrimSpace(order.Status))
-				if status == "pending" || status == "scheduled" || status == "confirmed" {
-					// Modifiable — let user choose to add or start a new order
-					return false, "existing_custom_modifiable", []*models.Order{order}
-				}
-				// Not modifiable (preparing, ready, etc.)
-				return false, "existing_custom_unmodifiable", []*models.Order{order}
 			}
+			modifiableOrders = append(modifiableOrders, order)
+		}
+		if len(modifiableOrders) > 0 {
+			return false, "existing_custom_modifiable", modifiableOrders
 		}
 		return true, "", nil
 
@@ -391,7 +416,7 @@ func updateCustomOrder(w http.ResponseWriter, userID string, req OrderChoiceRequ
 		log.Printf("⚠️  updateCustomOrder: failed to update order totals: %v", err)
 	}
 
-	log.Printf("✅ Custom order #%d updated: %d items, $%.2f", orderID, totalItems, subtotal)
+	log.Printf("✅ Custom order #%d updated: %d items, Ks %.2f", orderID, totalItems, subtotal)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -428,7 +453,7 @@ func updateCustomOrder(w http.ResponseWriter, userID string, req OrderChoiceRequ
 			}
 		}
 		title := "Custom Order Updated"
-		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: $%.2f", orderID, itemSummary, subtotal)
+		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f", orderID, itemSummary, subtotal)
 		buttons := []Button{
 			{Type: "postback", Title: "Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", orderID)},
 		}
@@ -711,7 +736,7 @@ func addItemsToExistingOrder(w http.ResponseWriter, userID string, orderID int, 
 		}
 
 		title := "Items Added & Merged"
-		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: $%.2f", updatedOrder.ID, itemSummary, updatedOrder.TotalAmount)
+		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f", updatedOrder.ID, itemSummary, updatedOrder.TotalAmount)
 		buttons := []Button{
 			{Type: "postback", Title: "Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", updatedOrder.ID)},
 			{Type: "postback", Title: "View Cart", Payload: fmt.Sprintf("VIEW_CART_%d", updatedOrder.ID)},
@@ -834,7 +859,7 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 		paymentLink := fmt.Sprintf("%s/order/%d", frontendURL, orderID)
 
 		title := "✅ Order Confirmed"
-		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: $%.2f\n\nReady to pay? Tap Pay Now below", orderID, itemSummary, subtotal)
+		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f\n\nReady to pay? Tap Pay Now below", orderID, itemSummary, subtotal)
 		buttons := []Button{
 			{Type: "web_url", Title: "💳 Pay Now", URL: paymentLink},
 			{Type: "postback", Title: "📍 Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", orderID)},
@@ -1019,14 +1044,22 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 
 		if !canOrder {
 			if reason == "existing_custom_modifiable" && len(modifiableOrders) > 0 {
-				// Custom cake order exists and is modifiable — ask user what to do
+				ordersPayload := make([]map[string]interface{}, 0, len(modifiableOrders))
+				for _, o := range modifiableOrders {
+					ordersPayload = append(ordersPayload, map[string]interface{}{
+						"id":     o.ID,
+						"status": o.Status,
+						"items":  o.TotalItems,
+						"amount": o.TotalAmount,
+					})
+				}
 				existingOrder := modifiableOrders[0]
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"success":  true,
 					"action":   "existing_custom_order",
-					"message":  fmt.Sprintf("You already have a custom cake order (#BF-%d). Update it, add to it, or start a new one.", existingOrder.ID),
+					"message":  "You already have custom cake orders. Select one to add items or create a new order.",
 					"order_id": existingOrder.ID,
 					"order": map[string]interface{}{
 						"id":     existingOrder.ID,
@@ -1034,6 +1067,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 						"items":  existingOrder.TotalItems,
 						"amount": existingOrder.TotalAmount,
 					},
+					"orders":     ordersPayload,
 					"newItems":   req.Items,
 					"order_type": string(orderTypeDetected),
 					"allow_new":  true,
@@ -1092,7 +1126,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 						Status:  order.Status,
 						Items:   actualItems,
 						Amount:  order.TotalAmount,
-						Summary: fmt.Sprintf("Order #BF-%d • %d items • $%.2f", order.ID, actualItems, order.TotalAmount),
+						Summary: fmt.Sprintf("Order #BF-%d • %d items • Ks %.2f", order.ID, actualItems, order.TotalAmount),
 					})
 				}
 
@@ -1143,7 +1177,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 					Status:  order.Status,
 					Items:   actualItems,
 					Amount:  order.TotalAmount,
-					Summary: fmt.Sprintf("Order #BF-%d • %d items • $%.2f", order.ID, actualItems, order.TotalAmount),
+					Summary: fmt.Sprintf("Order #BF-%d • %d items • Ks %.2f", order.ID, actualItems, order.TotalAmount),
 				})
 			}
 
@@ -1341,9 +1375,9 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		totalLabel := fmt.Sprintf("Total: $%.2f", total)
+		totalLabel := fmt.Sprintf("Total: Ks %.2f", total)
 		if discount > 0 {
-			totalLabel = fmt.Sprintf("Total: $%.2f (saved $%.2f)", total, discount)
+			totalLabel = fmt.Sprintf("Total: Ks %.2f (saved Ks %.2f)", total, discount)
 		}
 
 		subtitle := fmt.Sprintf("Order #BF-%d • %s • %s", orderID, itemSummary, totalLabel)
@@ -1377,7 +1411,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("[Order] Card failed for order #%d: %v", orderID, err)
 			// Fallback to plain text
-			fallbackMsg := fmt.Sprintf("✅ Order #BF-%d confirmed!\n\n%s\nTotal: $%.2f\n\nWe'll notify you when it's ready!", orderID, itemsList, total)
+			fallbackMsg := fmt.Sprintf("✅ Order #BF-%d confirmed!\n\n%s\nTotal: Ks %.2f\n\nWe'll notify you when it's ready!", orderID, itemsList, total)
 			SendMessageWithTag(userID, fallbackMsg, "POST_PURCHASE_UPDATE")
 		}
 	}()

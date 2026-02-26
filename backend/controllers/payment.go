@@ -326,7 +326,7 @@ func AdminVerifyPayment(w http.ResponseWriter, r *http.Request) {
 							Title:    item.Product,
 							Quantity: item.Quantity,
 							Price:    item.Price,
-							Currency: "USD",
+							Currency: "MMK",
 						}
 						if strings.TrimSpace(item.Note) != "" {
 							element.Subtitle = item.Note

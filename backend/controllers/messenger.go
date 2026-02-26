@@ -59,7 +59,7 @@ func SendReceiptTemplate(recipientID string, orderID int, customerName string, i
 		"template_type":  "receipt",
 		"recipient_name": customerName,
 		"order_number":   fmt.Sprintf("BF-%d", orderID),
-		"currency":       "USD",
+		"currency":       "MMK",
 		"payment_method": paymentMethod,
 		"timestamp":      time.Now().Unix(),
 		"elements":       items,

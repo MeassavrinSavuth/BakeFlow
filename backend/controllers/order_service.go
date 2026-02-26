@@ -348,7 +348,7 @@ func showProductRatingOptions(userID string, productID int) {
 
 	for _, order := range eligibleOrders {
 		orderDate := order.CreatedAt.Format("Jan 2, 2006")
-		subtitle := fmt.Sprintf("Order #%d • %s • $%.2f", order.ID, orderDate, order.TotalAmount)
+		subtitle := fmt.Sprintf("Order #%d • %s • Ks %.2f", order.ID, orderDate, order.TotalAmount)
 
 		elements = append(elements, Element{
 			Title:    fmt.Sprintf("📦 Order #%d", order.ID),

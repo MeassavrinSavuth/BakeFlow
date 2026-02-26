@@ -17,27 +17,6 @@ import (
 // showHelp displays help information
 // showHelp displays ordering instructions
 func showHelp(userID string) {
-	help := "🆘 *How to Order* / *မှာယူနည်း*\n\n" +
-		"1️⃣ Choose what you'd like to order\n" +
-		"    လိုချင်တဲ့ပစ္စည်းကို ရွေးပါ\n" +
-		"2️⃣ Select quantity / အရေအတွက် ရွေးပါ\n" +
-		"3️⃣ Enter your name / နာမည် ထည့်ပါ\n" +
-		"4️⃣ Choose pickup or delivery\n" +
-		"    ကိုယ်တိုင်ယူမလား ပို့မလား ရွေးပါ\n" +
-		"5️⃣ Confirm your order / အတည်ပြုပါ\n\n" +
-		"*You can type naturally:* / *သဘာဝအတိုင်း စာရိုက်နိုင်ပါတယ်*\n" +
-		"• \"I want chocolate cake\" / \"ချောကလက်ကိတ်လိုချင်တယ်\"\n" +
-		"• \"Give me 2\" / \"2 ခု ပေးပါ\"\n" +
-		"• \"I want to cancel\" / \"ပယ်ဖျက်ချင်တယ်\"\n" +
-		"• \"Show menu\" / \"မီနူး ပြပါ\"\n\n" +
-		"*Quick Commands:*\n" +
-		"• 'menu' - View products\n" +
-		"• 'cancel' - Start over\n" +
-		"• 'help' - Show this message"
-
-	SendMessage(userID, help)
-
-	// After showing help, open webview order form
 	ShowWebviewOrderForm(userID)
 }
 
@@ -136,7 +115,7 @@ func showOrderHistory(userID string) {
 		dateStr := order.CreatedAt.Format("Jan 2, 3:04 PM")
 
 		// Build subtitle
-		subtitle := fmt.Sprintf("%s %s • %s %s\n%s\nTotal: $%.2f",
+		subtitle := fmt.Sprintf("%s %s • %s %s\n%s\nTotal: Ks %.2f",
 			statusEmoji, statusText,
 			deliveryIcon, strings.Title(order.DeliveryType),
 			dateStr,
@@ -245,7 +224,7 @@ func showOrderTracking(userID string, orderID int) {
 		typeLabel = "Pickup"
 	}
 	title := fmt.Sprintf("Order #BF-%d", order.ID)
-	subtitle := fmt.Sprintf("%s • %s\n%s\nTotal: $%.2f\nProgress: %s", strings.Title(statusKey), typeLabel, itemSummary, order.TotalAmount, statusLabel)
+	subtitle := fmt.Sprintf("%s • %s\n%s\nTotal: Ks %.2f\nProgress: %s", strings.Title(statusKey), typeLabel, itemSummary, order.TotalAmount, statusLabel)
 
 	productImage := "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&h=200&fit=crop"
 	if len(order.Items) > 0 && strings.TrimSpace(order.Items[0].ImageURL) != "" {
@@ -270,7 +249,7 @@ func showOrderTracking(userID string, orderID int) {
 	buttons = append(buttons, Button{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"})
 
 	if err := SendOrderCard(userID, order.ID, title, subtitle, productImage, buttons); err != nil {
-		fallback := fmt.Sprintf("Order #BF-%d\n%s • %s\n%s\nTotal: $%.2f\nProgress: %s", order.ID, strings.Title(statusKey), typeLabel, itemSummary, order.TotalAmount, statusLabel)
+		fallback := fmt.Sprintf("Order #BF-%d\n%s • %s\n%s\nTotal: Ks %.2f\nProgress: %s", order.ID, strings.Title(statusKey), typeLabel, itemSummary, order.TotalAmount, statusLabel)
 		SendMessage(userID, fallback)
 	}
 }

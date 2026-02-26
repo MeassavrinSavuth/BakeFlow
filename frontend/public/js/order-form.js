@@ -28,9 +28,11 @@ async function init() {
             description: p.description || ''
         }));
         products.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+        window.products = products;
     } catch (e) {
         console.log('❌ Failed to load products', e);
         products = [];
+        window.products = products;
     }
     
     renderProducts();
@@ -778,8 +780,11 @@ function completeOrderSubmission(data, phone) {
         console.log('Failed to store invoice', e);
     }
 
-    const payParam = (window.__preferredPayMethod === 'scan') ? 'scan' : 'cash';
-    window.location.href = `/order/${orderId}?pay=${encodeURIComponent(payParam)}`;
+    const payMethod = (window.__preferredPayMethod === 'scan') ? 'scan' : 'cash';
+    const payUrl = payMethod === 'scan'
+        ? `/order/${orderId}?pay=scan`
+        : `/order/${orderId}`;
+    window.location.href = payUrl;
 }
 
 function choosePaymentMethodInline() {

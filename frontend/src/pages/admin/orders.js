@@ -31,6 +31,7 @@ export default function OrdersPage() {
   const [error, setError] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [paymentFilter, setPaymentFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -291,9 +292,12 @@ export default function OrdersPage() {
         : filter === 'delivered'
           ? deliveredOrders
           : activeOrders.filter(o => o.status === filter);
+    const paymentFiltered = paymentFilter === 'all'
+      ? visibleOrders
+      : visibleOrders.filter(o => String(o.payment_method || '').toLowerCase() === paymentFilter);
 
     const groupMap = new Map();
-    const entries = visibleOrders.map(order => {
+    const entries = paymentFiltered.map(order => {
       const createdAtMs = order.created_at ? new Date(order.created_at).getTime() : 0;
       const safeCreatedAtMs = Number.isFinite(createdAtMs) ? createdAtMs : 0;
       const dayStart = new Date(safeCreatedAtMs || now);
@@ -337,7 +341,7 @@ export default function OrdersPage() {
     });
 
     return Array.from(groupMap.values()).sort((a, b) => b.dayStartMs - a.dayStartMs);
-  }, [orders, filter, dateFilter, startDate, endDate, t]);
+  }, [orders, filter, paymentFilter, dateFilter, startDate, endDate, t]);
 
   const filteredCount = useMemo(() => {
     return groupedOrders.reduce((sum, group) => sum + group.orders.length, 0);
@@ -349,6 +353,11 @@ export default function OrdersPage() {
     { key: 'preparing', labelKey: 'preparing', icon: 'egg-fried' },
     { key: 'ready', labelKey: 'ready', icon: 'check-circle' },
     { key: 'delivered', labelKey: 'delivered', icon: 'check-all' }
+  ];
+  const paymentFilters = [
+    { key: 'all', label: 'All payments' },
+    { key: 'scan', label: 'Scan' },
+    { key: 'cash', label: 'Cash' }
   ];
   const dateFilters = [
     { key: 'all', label: `${t('all') || 'All'} ${t('dates') || 'dates'}` },
@@ -376,7 +385,7 @@ export default function OrdersPage() {
     };
     const normalizeName = (value) => String(value || '').trim().toLowerCase();
     const headers = [
-      'Date', 'Active Sr No', 'Order ID', 'Customer', 'Phone', 'Name', 'Op', 'In', 'Exp', 'FOC',
+      'Date', 'Active Sr No', 'Order ID', 'User ID', 'Customer', 'Phone', 'Name', 'Op', 'In', 'Exp', 'FOC',
       'Shop Sold', 'Cl', 'MSP', 'Price', 'Amount', 'WH Price', 'MSP Amt'
     ];
 
@@ -453,6 +462,7 @@ export default function OrdersPage() {
             dateKey,
             date: new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate()),
             orderId: order.id ?? '',
+            userId: order.sender_id ?? order.user_id ?? '',
             customerName: order.customer_name ?? '',
             customerPhone: order.customer_phone ?? '',
             productName,
@@ -469,11 +479,10 @@ export default function OrdersPage() {
       entries.forEach((entry) => {
         const soldKey = `${entry.dateKey}||${normalizeName(entry.productName)}`;
         const soldForDay = soldByDayProduct.get(soldKey) || 0;
-        const baseStock = stockByName.get(normalizeName(entry.productName)) ?? 0;
         const logItem = dailyLogsByKey.get(soldKey);
         const openingStock = Number.isFinite(Number(logItem?.opening_stock))
           ? Number(logItem.opening_stock)
-          : baseStock + soldForDay;
+          : '';
         const stockIn = Number.isFinite(Number(logItem?.stock_in)) ? Number(logItem.stock_in) : 0;
         const expired = Number.isFinite(Number(logItem?.expired)) ? Number(logItem.expired) : 0;
         const foc = Number.isFinite(Number(logItem?.foc)) ? Number(logItem.foc) : 0;
@@ -482,18 +491,19 @@ export default function OrdersPage() {
         row[0] = entry.date;
         row[1] = srNo;
         row[2] = entry.orderId;
-        row[3] = entry.customerName;
-        row[4] = entry.customerPhone;
-        row[5] = entry.productName;
-        row[6] = openingStock;
-        row[7] = stockIn;
-        row[8] = expired;
-        row[9] = foc;
-        row[10] = entry.qty;
-        row[13] = entry.price;
-        row[11] = { f: `G${rowIndex}+H${rowIndex}-I${rowIndex}-J${rowIndex}-K${rowIndex}` };
-        row[14] = { f: `K${rowIndex}*N${rowIndex}` };
-        row[16] = { f: `M${rowIndex}*P${rowIndex}` };
+        row[3] = entry.userId;
+        row[4] = entry.customerName;
+        row[5] = entry.customerPhone;
+        row[6] = entry.productName;
+        row[7] = openingStock;
+        row[8] = stockIn;
+        row[9] = expired;
+        row[10] = foc;
+        row[11] = entry.qty;
+        row[14] = entry.price;
+        row[12] = { f: `H${rowIndex}+I${rowIndex}-J${rowIndex}-K${rowIndex}-L${rowIndex}` };
+        row[15] = { f: `L${rowIndex}*O${rowIndex}` };
+        row[17] = { f: `N${rowIndex}*Q${rowIndex}` };
         ordersRows.push(row);
         const dayRows = ordersByDay.get(entry.dateKey) || [];
         dayRows.push({
@@ -515,7 +525,7 @@ export default function OrdersPage() {
 
     const ordersSheet = XLSX.utils.aoa_to_sheet(ordersRows);
     ordersSheet['!cols'] = [
-      { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 20 }, { wch: 16 }, { wch: 24 },
+      { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 24 },
       { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 10 },
       { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
     ];
@@ -523,25 +533,25 @@ export default function OrdersPage() {
     const ordersLastRow = Math.max(2, ordersRows.length);
     for (let row = 2; row <= ordersLastRow; row += 1) {
       const dateCell = `A${row}`;
-      const clCell = `L${row}`;
-      const amountCell = `O${row}`;
-      const mspAmtCell = `Q${row}`;
+      const clCell = `M${row}`;
+      const amountCell = `P${row}`;
+      const mspAmtCell = `R${row}`;
       if (ordersSheet[dateCell]) ordersSheet[dateCell].z = 'yyyy-mm-dd';
       if (ordersSheet[amountCell]) ordersSheet[amountCell].z = '#,##0.00';
       if (ordersSheet[mspAmtCell]) ordersSheet[mspAmtCell].z = '#,##0.00';
-      if (ordersSheet[`N${row}`]) ordersSheet[`N${row}`].z = '#,##0.00';
-      if (ordersSheet[`P${row}`]) ordersSheet[`P${row}`].z = '#,##0.00';
+      if (ordersSheet[`O${row}`]) ordersSheet[`O${row}`].z = '#,##0.00';
+      if (ordersSheet[`Q${row}`]) ordersSheet[`Q${row}`].z = '#,##0.00';
       if (ordersSheet[clCell] && !ordersSheet[clCell].f) {
-        ordersSheet[clCell].f = `G${row}+H${row}-I${row}-J${row}-K${row}`;
+        ordersSheet[clCell].f = `H${row}+I${row}-J${row}-K${row}-L${row}`;
       }
     }
 
     const summaryRows = [
       ['Selected Month', monthDate],
       [],
-      ['Total Sale Amount', { f: `SUMIFS(Orders!$O$2:$O$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
-      ['Total Shop Sold', { f: `SUMIFS(Orders!$K$2:$K$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
-      ['Total MSP Amount', { f: `SUMIFS(Orders!$Q$2:$Q$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
+      ['Total Sale Amount', { f: `SUMIFS(Orders!$P$2:$P$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
+      ['Total Shop Sold', { f: `SUMIFS(Orders!$L$2:$L$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
+      ['Total MSP Amount', { f: `SUMIFS(Orders!$R$2:$R$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
       [],
       ['Payment', ''],
       ['Cash', ''],
@@ -569,13 +579,13 @@ export default function OrdersPage() {
         const row = new Array(headers.length).fill('');
         row[0] = dateObj;
         row[1] = 1;
-        row[6] = 0;
         row[7] = 0;
         row[8] = 0;
         row[9] = 0;
-        row[11] = { f: 'G2+H2-I2-J2-K2' };
-        row[14] = { f: 'K2*N2' };
-        row[16] = { f: 'M2*P2' };
+        row[10] = 0;
+        row[12] = { f: 'H2+I2-J2-K2-L2' };
+        row[15] = { f: 'L2*O2' };
+        row[17] = { f: 'N2*Q2' };
         dayRows.push(row);
       } else {
         const byProduct = new Map();
@@ -604,16 +614,16 @@ export default function OrdersPage() {
           const row = new Array(headers.length).fill('');
           row[0] = dateObj;
           row[1] = index + 1;
-          row[5] = item.name;
-          row[6] = item.op ?? 0;
-          row[7] = item.stockIn ?? 0;
-          row[8] = item.expired ?? 0;
-          row[9] = item.foc ?? 0;
-          row[10] = item.qty;
-          row[13] = item.price;
-          row[11] = { f: `G${rowIndex}+H${rowIndex}-I${rowIndex}-J${rowIndex}-K${rowIndex}` };
-          row[14] = { f: `K${rowIndex}*N${rowIndex}` };
-          row[16] = { f: `M${rowIndex}*P${rowIndex}` };
+          row[6] = item.name;
+          row[7] = item.op ?? 0;
+          row[8] = item.stockIn ?? 0;
+          row[9] = item.expired ?? 0;
+          row[10] = item.foc ?? 0;
+          row[11] = item.qty;
+          row[14] = item.price;
+          row[12] = { f: `H${rowIndex}+I${rowIndex}-J${rowIndex}-K${rowIndex}-L${rowIndex}` };
+          row[15] = { f: `L${rowIndex}*O${rowIndex}` };
+          row[17] = { f: `N${rowIndex}*Q${rowIndex}` };
           dayRows.push(row);
         });
       }
@@ -622,13 +632,13 @@ export default function OrdersPage() {
       const dayLastRow = Math.max(2, dayRows.length);
       for (let row = 2; row <= dayLastRow; row += 1) {
         const dateCell = `A${row}`;
-        const amountCell = `O${row}`;
-        const mspAmtCell = `Q${row}`;
+        const amountCell = `P${row}`;
+        const mspAmtCell = `R${row}`;
         if (daySheet[dateCell]) daySheet[dateCell].z = 'yyyy-mm-dd';
         if (daySheet[amountCell]) daySheet[amountCell].z = '#,##0.00';
         if (daySheet[mspAmtCell]) daySheet[mspAmtCell].z = '#,##0.00';
-        if (daySheet[`N${row}`]) daySheet[`N${row}`].z = '#,##0.00';
-        if (daySheet[`P${row}`]) daySheet[`P${row}`].z = '#,##0.00';
+        if (daySheet[`O${row}`]) daySheet[`O${row}`].z = '#,##0.00';
+        if (daySheet[`Q${row}`]) daySheet[`Q${row}`].z = '#,##0.00';
       }
       XLSX.utils.book_append_sheet(workbook, daySheet, dateKey);
     }
@@ -729,6 +739,13 @@ export default function OrdersPage() {
                       {filters.map(f => (
                         <button key={f.key} onClick={() => setFilter(f.key)} className={`btn ${filter === f.key ? 'btn-dark' : 'btn-outline-secondary'}`}>
                           <i className={`bi bi-${f.icon} me-1`} />{t(f.labelKey)}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="btn-group flex-wrap" role="group">
+                      {paymentFilters.map(f => (
+                        <button key={f.key} onClick={() => setPaymentFilter(f.key)} className={`btn ${paymentFilter === f.key ? 'btn-dark' : 'btn-outline-secondary'}`}>
+                          {f.label}
                         </button>
                       ))}
                     </div>

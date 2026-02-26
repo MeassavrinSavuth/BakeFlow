@@ -270,7 +270,7 @@ async function submitOrder() {
             } else {
                 // Legacy single-cake format
                 await window.submitPreorderDirect({
-                    flavor: po.flavor, size: po.size, layers: po.layers, cream: po.cream,
+                    size: po.size, layers: po.layers, cream: po.cream,
                     message: po.message, notes: po.notes, product: po.product, schedule: sched,
                     customerName: name, customerPhone: phone,
                     deliveryType: deliveryType,
@@ -559,8 +559,11 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
                     console.log('Failed to store invoice', e);
                 }
 
-                const payParam = (paymentMethod || window.__preferredPayMethod) === 'scan' ? 'scan' : 'cash';
-                window.location.href = `/order/${data.order_id}?pay=${encodeURIComponent(payParam)}`;
+                const payMethod = (paymentMethod || window.__preferredPayMethod) === 'scan' ? 'scan' : 'cash';
+                const payUrl = payMethod === 'scan'
+                    ? `/order/${data.order_id}?pay=scan`
+                    : `/order/${data.order_id}`;
+                window.location.href = payUrl;
             } else {
                 // Handle specific errors (like insufficient stock)
                 if (data && data.error === 'insufficient_stock') {
@@ -752,7 +755,6 @@ async function submitPreorder(preorder) {
         return;
     }
 
-    const flavor = String(draft?.flavor || '').trim();
     const size = String(draft?.size || '').trim();
     const cakeMessage = String(draft?.message || '').trim();
     const notes = String(draft?.notes || '').trim();
@@ -762,12 +764,10 @@ async function submitPreorder(preorder) {
     const selectedName = String(selectedProduct?.name || '').trim();
     const selectedImage = String(selectedProduct?.image_url || '').trim();
 
-    if (!flavor) { showError('Pick a flavor'); return; }
     if (!size) { showError('Pick a size'); return; }
 
     const parts = [
         selectedName ? `Cake: ${selectedName}` : '',
-        `Flavor: ${flavor}`,
         `Size: ${size}`,
         layers ? `Layers: ${layers}` : '',
         cream ? `Cream: ${cream}` : '',
@@ -799,6 +799,14 @@ async function submitPreorder(preorder) {
         geo: window.getGeo ? window.getGeo() : null,
         delivery_directions: document.getElementById('deliveryDirections')?.value.trim() || ''
     };
+
+    try {
+        const method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+        if (!method) { resetPreorderSubmitButton(); return; }
+        window.__preferredPayMethod = method;
+    } catch (e) {
+        window.__preferredPayMethod = 'cash';
+    }
 
     isSubmittingPreorder = true;
     const btn = document.getElementById('preorderSubmitBtn');
@@ -854,7 +862,11 @@ async function submitPreorder(preorder) {
             if (typeof closeSheets === 'function') closeSheets();
             window.pendingPreorderDraft = null;
 
-            window.location.href = `/order/${data.order_id}`;
+            const payMethod = (window.__preferredPayMethod === 'scan') ? 'scan' : 'cash';
+            const payUrl = payMethod === 'scan'
+                ? `/order/${data.order_id}?pay=scan`
+                : `/order/${data.order_id}`;
+            window.location.href = payUrl;
             return;
         }
 
@@ -935,7 +947,6 @@ async function submitPreorderDirect(opts) {
 
             const parts = [
                 selectedName ? `Cake: ${selectedName}` : '',
-                `Flavor: ${cake.flavor}`,
                 `Size: ${cake.size}`,
                 cake.layers ? `Layers: ${cake.layers}` : '',
                 cake.cream ? `Cream: ${cake.cream}` : '',
@@ -956,11 +967,10 @@ async function submitPreorderDirect(opts) {
                 image_url: selectedImage || 'https://images.unsplash.com/photo-1603532648955-039310d9ed75?w=400&h=200&fit=crop'
             });
             totalPrice += cakePrice;
-            allNotes.push(`Cake ${i + 1}: ${selectedName || 'Custom'} — ${cake.flavor}, ${cake.size}`);
+            allNotes.push(`Cake ${i + 1}: ${selectedName || 'Custom'} — ${cake.size}`);
         });
     } else {
         // Legacy single-cake format
-        const flavor = String(opts.flavor || '').trim();
         const size = String(opts.size || '').trim();
         const cakeMessage = String(opts.message || '').trim();
         const notes = String(opts.notes || '').trim();
@@ -979,7 +989,7 @@ async function submitPreorderDirect(opts) {
 
         const parts = [
             selectedName ? `Cake: ${selectedName}` : '',
-            `Flavor: ${flavor}`, `Size: ${size}`,
+            `Size: ${size}`,
             layers ? `Layers: ${layers}` : '', cream ? `Cream: ${cream}` : '',
             sizePrice > 0 ? `Size price: Ks ${sizePrice.toFixed(2)}` : '',
             layerPrice > 0 ? `Layer price: Ks ${layerPrice.toFixed(2)}` : '',
@@ -1010,6 +1020,14 @@ async function submitPreorderDirect(opts) {
         notes: `Custom cake order\n\n${allNotes.join('\n\n')}`,
         schedule,
     };
+
+    try {
+        const method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+        if (!method) { resetPreorderSubmitButton(); return; }
+        window.__preferredPayMethod = method;
+    } catch (e) {
+        window.__preferredPayMethod = 'cash';
+    }
 
     isSubmittingPreorder = true;
     const btn = document.getElementById('preorderSubmitBtn');
@@ -1054,6 +1072,8 @@ async function submitPreorderDirect(opts) {
             }
             showToast(`Custom cake order #${data.order_id} placed! Ready by ${whenLabel}`, 'success');
 
+            const payMethod = (window.__preferredPayMethod === 'scan') ? 'scan' : 'cash';
+            const paymentStatus = payMethod === 'scan' ? 'Scan to pay' : 'Pay by cash';
             // Store invoice data for receipt page
             const invoiceData = {
                 order_id: data.order_id,
@@ -1062,7 +1082,7 @@ async function submitPreorderDirect(opts) {
                 customer_phone: phone,
                 address: address,
                 delivery_type: deliveryType === 'pickup' ? 'Pick Up' : 'Delivery',
-                payment_status: 'Pay on delivery',
+                payment_status: paymentStatus,
                 subtotal: totalPrice,
                 discount: 0,
                 delivery_fee: 0,
@@ -1080,7 +1100,7 @@ async function submitPreorderDirect(opts) {
 
             if (typeof closeSheets === 'function') closeSheets();
 
-            window.location.href = `/order/${data.order_id}`;
+            window.location.href = `/order/${data.order_id}?pay=${encodeURIComponent(payMethod)}`;
             return;
         }
 
@@ -1126,8 +1146,9 @@ function showCustomOrderChoiceDialog(choiceData, orderData, name, phone) {
         document.head.appendChild(style);
     }
 
-    const existingOrderId = choiceData.order_id;
-    const existingOrder = choiceData.order || {};
+    const orders = Array.isArray(choiceData.orders) && choiceData.orders.length > 0
+        ? choiceData.orders
+        : (choiceData.order ? [choiceData.order] : []);
 
     const content = document.createElement('div');
     content.style.cssText = `
@@ -1146,12 +1167,11 @@ function showCustomOrderChoiceDialog(choiceData, orderData, name, phone) {
     `;
 
     const msg = document.createElement('p');
-    const orderLabel = existingOrderId ? `(#BF-${existingOrderId})` : '';
     const isAddBlocked = choiceData && choiceData.allow_add === false;
     const isUpdateBlocked = choiceData && choiceData.allow_update === false;
     const messageText = isAddBlocked && isUpdateBlocked
-        ? `You already have a custom cake order ${orderLabel} being prepared. You can create a new order.`
-        : `You already have a custom cake order ${orderLabel}. Add to it or create a new order.`;
+        ? 'You already have custom cake orders being prepared. You can create a new order.'
+        : 'You already have custom cake orders. Select one to add items or create a new order.';
     msg.textContent = messageText;
     msg.style.cssText = `
         margin: 0 0 24px 0; font-size: 15px; color: #555; line-height: 1.6;
@@ -1162,45 +1182,50 @@ function showCustomOrderChoiceDialog(choiceData, orderData, name, phone) {
     orderList.style.cssText = `
         background: #f9f9f9; border-radius: 8px; margin-bottom: 24px;
     `;
-    const orderItem = document.createElement('div');
-    orderItem.style.cssText = `
-        padding: 12px 16px; display: flex;
-        justify-content: space-between; align-items: center;
-        border-bottom: 1px solid #eee;
-        transition: background 0.2s;
-    `;
-    orderItem.onmouseover = () => { orderItem.style.background = '#f0f0f0'; };
-    orderItem.onmouseout = () => { orderItem.style.background = 'transparent'; };
-    const orderInfo = document.createElement('div');
-    const statusLabel = (existingOrder.status || 'pending').toUpperCase();
-    orderInfo.textContent = `Order #BF-${existingOrderId} • ${existingOrder.items || 0} items • Ks ${Number(existingOrder.amount || 0).toFixed(2)} • ${statusLabel}`;
-    orderInfo.style.cssText = `
-        flex: 1; font-size: 14px; color: #333; font-weight: 500;
-    `;
     const allowAdd = !(choiceData && choiceData.allow_add === false);
-    const addBtn = document.createElement('button');
-    addBtn.textContent = 'Select';
-    addBtn.style.cssText = `
-        padding: 6px 12px;
-        background: #4CAF50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-size: 12px;
-        cursor: pointer;
-        transition: background 0.2s;
-    `;
-    addBtn.onmouseover = () => { addBtn.style.background = '#45a049'; };
-    addBtn.onmouseout = () => { addBtn.style.background = '#4CAF50'; };
-    addBtn.onclick = () => {
-        dialog.remove();
-        sendCustomOrderChoice('add_to_existing', existingOrderId, orderData, name, phone);
-    };
-    orderItem.appendChild(orderInfo);
-    if (allowAdd) {
-        orderItem.appendChild(addBtn);
-    }
-    orderList.appendChild(orderItem);
+    orders.forEach((order, idx) => {
+        const orderItem = document.createElement('div');
+        orderItem.style.cssText = `
+            padding: 12px 16px; display: flex;
+            justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #eee;
+            transition: background 0.2s;
+        `;
+        orderItem.onmouseover = () => { orderItem.style.background = '#f0f0f0'; };
+        orderItem.onmouseout = () => { orderItem.style.background = 'transparent'; };
+        const orderInfo = document.createElement('div');
+        const statusLabel = (order.status || 'pending').toUpperCase();
+        orderInfo.textContent = `Order #BF-${order.id} • ${order.items || 0} items • Ks ${Number(order.amount || 0).toFixed(2)} • ${statusLabel}`;
+        orderInfo.style.cssText = `
+            flex: 1; font-size: 14px; color: #333; font-weight: 500;
+        `;
+        const addBtn = document.createElement('button');
+        addBtn.textContent = 'Select';
+        addBtn.style.cssText = `
+            padding: 6px 12px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        `;
+        addBtn.onmouseover = () => { addBtn.style.background = '#45a049'; };
+        addBtn.onmouseout = () => { addBtn.style.background = '#4CAF50'; };
+        addBtn.onclick = () => {
+            dialog.remove();
+            sendCustomOrderChoice('add_to_existing', order.id, orderData, name, phone);
+        };
+        orderItem.appendChild(orderInfo);
+        if (allowAdd) {
+            orderItem.appendChild(addBtn);
+        }
+        orderList.appendChild(orderItem);
+        if (idx === orders.length - 1) {
+            orderItem.style.borderBottom = 'none';
+        }
+    });
 
     // Button group
     const buttonGroup = document.createElement('div');
@@ -1223,7 +1248,7 @@ function showCustomOrderChoiceDialog(choiceData, orderData, name, phone) {
     newBtn.onmouseout = () => { newBtn.style.boxShadow = '0 4px 12px rgba(33,150,243,0.3)'; newBtn.style.transform = 'translateY(0)'; };
     newBtn.onclick = () => {
         dialog.remove();
-        sendCustomOrderChoice('new_order', existingOrderId, orderData, name, phone);
+        sendCustomOrderChoice('new_order', null, orderData, name, phone);
     };
 
     if (allowNew) {
@@ -1587,6 +1612,9 @@ function completeOrderSubmission(data, name, phone, orderData, paymentMethod) {
         console.log('Failed to store invoice', e);
     }
 
-    const payParam = (paymentMethod || window.__preferredPayMethod) === 'scan' ? 'scan' : 'cash';
-    window.location.href = `/order/${orderId}?pay=${encodeURIComponent(payParam)}`;
+    const payMethod = (paymentMethod || window.__preferredPayMethod) === 'scan' ? 'scan' : 'cash';
+    const payUrl = payMethod === 'scan'
+        ? `/order/${orderId}?pay=scan`
+        : `/order/${orderId}`;
+    window.location.href = payUrl;
 }

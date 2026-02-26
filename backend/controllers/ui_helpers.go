@@ -15,7 +15,7 @@ func getProductElements() []Element {
 	}
 	var elements []Element
 	for _, p := range products {
-		price := fmt.Sprintf("$%.2f", p.Price)
+		price := fmt.Sprintf("Ks %.2f", p.Price)
 		img := p.ImageURL
 		if img == "" {
 			img = "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=200&fit=crop"

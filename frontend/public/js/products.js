@@ -160,31 +160,8 @@ function syncPreorderOptionChips(name) {
 const fallbackPreorderOptions = {
     sizes: ['6 inch', '8 inch', '10 inch'],
     layers: ['1 layer', '2 layers', '3 layers'],
-    creams: ['Buttercream', 'Fresh cream', 'Cream cheese', 'Chocolate ganache'],
-    flavors: ['Vanilla', 'Chocolate', 'Red Velvet', 'Matcha', 'Strawberry', 'Taro']
+    creams: ['Buttercream', 'Fresh cream', 'Cream cheese', 'Chocolate ganache']
 };
-
-function renderPreorderFlavorOptions(values) {
-    const select = document.getElementById('preorderFlavor');
-    if (!select) return;
-    const prev = String(select.value || '').trim();
-    select.innerHTML = '';
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = 'Select flavor';
-    select.appendChild(placeholder);
-    const list = Array.isArray(values) ? values : [];
-    list.forEach((value) => {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = value;
-        if (prev && prev === value) opt.selected = true;
-        select.appendChild(opt);
-    });
-    if (!select.value) {
-        select.value = '';
-    }
-}
 
 function renderPreorderOptionChips(containerId, name, values) {
     const container = document.getElementById(containerId);
@@ -292,15 +269,12 @@ function updatePreorderOptionsUI(settings, fallback) {
     const sizes = Array.isArray(opts.sizes) && opts.sizes.length ? opts.sizes : (fallback?.sizes || []);
     const layers = Array.isArray(opts.layers) && opts.layers.length ? opts.layers : (fallback?.layers || []);
     const creams = Array.isArray(opts.creams) && opts.creams.length ? opts.creams : (fallback?.creams || []);
-    const flavors = Array.isArray(opts.flavors) && opts.flavors.length ? opts.flavors : (fallback?.flavors || []);
-    renderPreorderFlavorOptions(flavors);
     renderPreorderOptionChips('preorderSizeOptions', 'preorderSize', sizes);
     renderPreorderOptionChips('preorderLayerOptions', 'preorderLayer', layers);
     renderPreorderOptionChips('preorderCreamOptions', 'preorderCream', creams);
     applyPreorderDateRange(opts);
     window.currentPreorderSettings = { ...opts, enabled: opts.enabled !== false && !ended };
     updatePreorderPriceSummary();
-    // Update the custom cake notice with actual period dates
     const noticeEl = document.getElementById('customCakeNoticeText');
     if (noticeEl) {
         const periodText = getPreorderPeriodText(opts);
@@ -408,7 +382,6 @@ function refreshPreorderScheduleDisplay() {
 window.customCakeCart = [];
 
 function addCakeToCart() {
-    const flavor = document.getElementById('preorderFlavor')?.value || '';
     const size = getSelectedPreorderOption('preorderSize');
     const layers = getSelectedPreorderOption('preorderLayer');
     const cream = getSelectedPreorderOption('preorderCream');
@@ -417,7 +390,6 @@ function addCakeToCart() {
     const product = getSelectedPreorderProduct();
 
     if (!product) { window.showToast && window.showToast('Pick a cake first'); return; }
-    if (!flavor) { window.showToast && window.showToast('Pick a flavor'); return; }
     if (!size) { window.showToast && window.showToast('Pick a size'); return; }
     if (!layers) { window.showToast && window.showToast('Pick layers'); return; }
     if (!cream) { window.showToast && window.showToast('Pick a cream type'); return; }
@@ -426,7 +398,7 @@ function addCakeToCart() {
 
     window.customCakeCart.push({
         id: Date.now(),
-        product, flavor, size, layers, cream, message, notes,
+        product, size, layers, cream, message, notes,
         price: priceData.total,
         sizeExtra: priceData.sizeExtra,
         layerExtra: priceData.layerExtra,
@@ -434,8 +406,6 @@ function addCakeToCart() {
     });
 
     // Reset form for next cake
-    const flavorEl = document.getElementById('preorderFlavor');
-    if (flavorEl) flavorEl.value = '';
     const msgEl = document.getElementById('preorderMessage');
     if (msgEl) msgEl.value = '';
     const notesEl = document.getElementById('preorderNotes');
@@ -513,7 +483,7 @@ function renderCustomCakeCart() {
         nameEl.textContent = `${cake.product?.name || 'Custom Cake'} — ${cake.size}`;
         const metaEl = document.createElement('div');
         metaEl.className = 'preorder-cart-card-meta';
-        metaEl.textContent = `${cake.flavor} · ${cake.layers} · ${cake.cream}`;
+        metaEl.textContent = `${cake.layers} · ${cake.cream}`;
         info.appendChild(nameEl);
         info.appendChild(metaEl);
 
