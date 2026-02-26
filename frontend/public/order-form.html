@@ -207,24 +207,24 @@
                             <div class="bar-cart-icon">
                                 <i data-lucide="shopping-bag"></i>
                             </div>
-                            <div class="bar-summary-text">
+                            <div class="bar-summary-metrics">
                                 <div class="bar-items"><strong id="barItems">0</strong> items</div>
                                 <div class="bar-subtotal-row">
                                     <span class="bar-label">Subtotal</span>
-                                    <span id="barSubtotal">$0.00</span>
+                                    <span class="bar-value" id="barSubtotal">Ks 0.00</span>
                                 </div>
                                 <div class="bar-discount-row" id="barDiscountRow" style="display:none;">
                                     <span class="bar-label">Discounts</span>
-                                    <span id="barDiscount">-$0.00</span>
+                                    <span class="bar-value" id="barDiscount">-Ks 0.00</span>
+                                </div>
+                                <div class="bar-total-row">
+                                    <span class="bar-total-label">Total</span>
+                                    <span class="bar-total" id="barTotal">Ks 0.00</span>
                                 </div>
                             </div>
                         </div>
-                        <div class="bar-total-stack">
-                            <div class="bar-total-label">Total</div>
-                            <div class="bar-total" id="barTotal">$0.00</div>
-                        </div>
                     </div>
-                    <button class="primary-btn" id="barCheckout" disabled onclick="openDeliveryForm()">
+                    <button class="primary-btn bar-checkout" id="barCheckout" disabled onclick="openDeliveryForm()">
                         Checkout
                     </button>
                 </div>
@@ -544,7 +544,7 @@
 
                     <div class="preorder-cart-total-row">
                         <span class="preorder-cart-total-label">Total</span>
-                        <span class="preorder-cart-total-price" id="customCakeCartTotal">$0.00</span>
+                        <span class="preorder-cart-total-price" id="customCakeCartTotal">Ks 0.00</span>
                     </div>
                 </div>
 
@@ -757,7 +757,7 @@
                 <div class="product-sheet-footer">
                     <button class="product-add-btn" id="productSheetAddBtn" onclick="confirmAddToCart()">
                         <span class="product-add-btn-text">Add to cart</span>
-                        <span class="product-add-btn-price" id="productSheetTotalPrice">$0.00</span>
+                        <span class="product-add-btn-price" id="productSheetTotalPrice">Ks 0.00</span>
                     </button>
                 </div>
             </div>

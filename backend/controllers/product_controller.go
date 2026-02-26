@@ -596,6 +596,31 @@ func (pc *ProductController) UpdateProductStock(w http.ResponseWriter, r *http.R
 	}
 	go models.CreateLogEntry(pc.DB, id, adminID, "STOCK_UPDATE", changes)
 
+	adjustment := newStock - oldStock
+	if adjustment != 0 {
+		logDate := models.TruncateDate(time.Now())
+		_, err = models.GetDailyStockLog(logDate, id)
+		if err == sql.ErrNoRows {
+			soldSoFar, _ := models.GetDailySold(logDate, id)
+			opening := oldStock + soldSoFar
+			_ = models.EnsureDailyStockLog(logDate, id, opening)
+		}
+		if adjustment > 0 {
+			_ = models.AddDailyStockDeltas(logDate, id, adjustment, 0, 0, 0)
+		} else {
+			reason := strings.ToLower(strings.TrimSpace(body.Reason))
+			expired := 0
+			foc := 0
+			delta := -adjustment
+			if strings.Contains(reason, "foc") || strings.Contains(reason, "free") {
+				foc = delta
+			} else {
+				expired = delta
+			}
+			_ = models.AddDailyStockDeltas(logDate, id, 0, expired, foc, 0)
+		}
+	}
+
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
 		"success":   true,
 		"message":   fmt.Sprintf("Stock updated: %d → %d", oldStock, newStock),

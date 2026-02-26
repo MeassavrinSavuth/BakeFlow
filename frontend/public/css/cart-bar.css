@@ -67,7 +67,9 @@
 
 /* ========== Main Row ========== */
 .bar-main {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     gap: var(--space-sm);
 }
 
@@ -77,10 +79,10 @@
     border-radius: var(--radius);
     padding: var(--space-sm) var(--space-md);
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    align-items: center;
     border: none;
     transition: all var(--transition-fast);
+    min-width: 0;
 }
 
 .bar-summary:hover {
@@ -95,6 +97,8 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-sm);
+    min-width: 0;
+    flex: 1;
 }
 
 .bar-cart-icon {
@@ -128,12 +132,20 @@
     font-weight: 800;
     color: var(--gray-900);
     letter-spacing: -0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.bar-summary-text {
+.bar-value {
+    white-space: nowrap;
+}
+
+.bar-summary-metrics {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    min-width: 0;
 }
 
 .bar-subtotal-row,
@@ -141,10 +153,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-sm);
+    gap: 12px;
     font-size: 12px;
     font-weight: 600;
     color: var(--gray-500);
+    min-width: 0;
 }
 
 .bar-discount-row {
@@ -154,19 +167,21 @@
 .bar-label {
     font-weight: 600;
     color: inherit;
-}
-
-.bar-total-stack {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
+    white-space: nowrap;
 }
 
 .bar-total-label {
     font-size: 12px;
     font-weight: 600;
     color: var(--gray-500);
+    white-space: nowrap;
+}
+
+.bar-total-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
 }
 
 /* ========== Primary Button ========== */
@@ -187,6 +202,11 @@
     transition: all var(--transition-fast);
     flex-shrink: 0;
     box-shadow: var(--shadow);
+    white-space: nowrap;
+}
+
+.bar-checkout {
+    min-width: 240px;
 }
 
 .primary-btn:hover:not(:disabled) {
@@ -259,11 +279,20 @@
 
 @media (max-width: 520px) {
     .bar-main {
-        flex-direction: column;
+        grid-template-columns: 1fr;
     }
 
-    .primary-btn {
+    .bar-summary {
+        padding: var(--space-sm);
+    }
+
+    .bar-total {
+        font-size: 20px;
+    }
+
+    .bar-checkout {
         width: 100%;
+        min-width: 0;
     }
 }
 

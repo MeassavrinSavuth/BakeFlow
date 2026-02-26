@@ -215,7 +215,7 @@ export default function OrderPage() {
                                 <span style={{
                                     fontSize: '14px', fontWeight: 600, color: '#1f2937',
                                 }}>
-                                    ${(item.price * item.quantity).toFixed(2)}
+                                    Ks {(item.price * item.quantity).toFixed(2)}
                                 </span>
                             </div>
                         ))}
@@ -235,7 +235,7 @@ export default function OrderPage() {
                                 fontSize: '20px', fontWeight: 800, color: '#1f2937',
                                 letterSpacing: '-0.5px',
                             }}>
-                                ${Number(order.total_amount || 0).toFixed(2)}
+                                Ks {Number(order.total_amount || 0).toFixed(2)}
                             </span>
                         </div>
                     </div>

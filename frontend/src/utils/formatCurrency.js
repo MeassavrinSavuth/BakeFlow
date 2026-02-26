@@ -1,4 +1,6 @@
 export function formatCurrency(value) {
-  if (value == null || isNaN(value)) return '$0.00';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return 'Ks 0.00';
+  const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numberValue);
+  return `Ks ${formatted}`;
 }

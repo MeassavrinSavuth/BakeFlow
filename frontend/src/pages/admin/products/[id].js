@@ -46,7 +46,6 @@ export default function ProductFormPage() {
     sizes: [],
     layers: [],
     creams: [],
-    flavors: [],
     size_prices: {},
     layer_prices: {},
     cream_prices: {}
@@ -57,8 +56,7 @@ export default function ProductFormPage() {
     layer: '',
     layerPrice: '',
     cream: '',
-    creamPrice: '',
-    flavor: ''
+    creamPrice: ''
   });
   const [preorderLoading, setPreorderLoading] = useState(false);
   const [preorderSaving, setPreorderSaving] = useState(false);
@@ -135,7 +133,6 @@ export default function ProductFormPage() {
           sizes: Array.isArray(data.sizes) ? data.sizes : [],
           layers: Array.isArray(data.layers) ? data.layers : [],
           creams: Array.isArray(data.creams) ? data.creams : [],
-          flavors: Array.isArray(data.flavors) ? data.flavors : [],
           size_prices: data.size_prices && typeof data.size_prices === 'object' ? data.size_prices : {},
           layer_prices: data.layer_prices && typeof data.layer_prices === 'object' ? data.layer_prices : {},
           cream_prices: data.cream_prices && typeof data.cream_prices === 'object' ? data.cream_prices : {}
@@ -290,7 +287,6 @@ export default function ProductFormPage() {
           sizes: preorderSettings.sizes || [],
           layers: preorderSettings.layers || [],
           creams: preorderSettings.creams || [],
-          flavors: preorderSettings.flavors || [],
           size_prices: preorderSettings.size_prices || {},
           layer_prices: preorderSettings.layer_prices || {},
           cream_prices: preorderSettings.cream_prices || {}
@@ -306,7 +302,6 @@ export default function ProductFormPage() {
           sizes: Array.isArray(data.sizes) ? data.sizes : [],
           layers: Array.isArray(data.layers) ? data.layers : [],
           creams: Array.isArray(data.creams) ? data.creams : [],
-          flavors: Array.isArray(data.flavors) ? data.flavors : [],
           size_prices: data.size_prices && typeof data.size_prices === 'object' ? data.size_prices : {},
           layer_prices: data.layer_prices && typeof data.layer_prices === 'object' ? data.layer_prices : {},
           cream_prices: data.cream_prices && typeof data.cream_prices === 'object' ? data.cream_prices : {}
@@ -548,7 +543,7 @@ export default function ProductFormPage() {
                           </div>
 
                           <div className="mb-4">
-                            <label className="form-label fw-semibold">Price ($) *</label>
+                            <label className="form-label fw-semibold">Price (Ks) *</label>
                             <input
                               type="number"
                               step="0.01"
@@ -1018,51 +1013,6 @@ export default function ProductFormPage() {
                                   </div>
                                 </div>
 
-                                <div className="card border-0 shadow-sm">
-                                  <div className="card-body">
-                                    <div className="fw-semibold mb-2">Available Flavors</div>
-                                    <div className="d-flex gap-2 mb-2">
-                                      <input
-                                        type="text"
-                                        className="form-control"
-                                        value={preorderInputs.flavor}
-                                        onChange={(e) => setPreorderInputs((prev) => ({ ...prev, flavor: e.target.value }))}
-                                        placeholder="e.g., Chocolate"
-                                        disabled={preorderLoading || preorderSaving}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            addPreorderOption('flavors', 'flavor');
-                                          }
-                                        }}
-                                      />
-                                      <button
-                                        type="button"
-                                        className="btn btn-outline-secondary"
-                                        onClick={() => addPreorderOption('flavors', 'flavor')}
-                                        disabled={preorderLoading || preorderSaving}
-                                      >
-                                        Add
-                                      </button>
-                                    </div>
-                                    <div className="d-flex flex-wrap gap-2">
-                                      {preorderSettings.flavors.map((item) => (
-                                        <span key={`flavor-${item}`} className="badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-2 px-3 py-2">
-                                          <span>{item}</span>
-                                          <button
-                                            type="button"
-                                            className="btn btn-sm btn-link p-0 text-decoration-none"
-                                            onClick={() => removePreorderOption('flavors', item)}
-                                            aria-label={`Remove ${item}`}
-                                          >
-                                            <i className="bi bi-x-lg"></i>
-                                          </button>
-                                        </span>
-                                      ))}
-                                      {!preorderSettings.flavors.length && <span className="text-muted small">No flavors added</span>}
-                                    </div>
-                                  </div>
-                                </div>
                               </div>
                             )}
                           </div>

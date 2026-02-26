@@ -22,15 +22,21 @@ function getEffectiveUnitPriceForProduct(product) {
     return product.price;
 }
 
+function formatMoneyKs(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 'Ks 0.00';
+    return `Ks ${num.toFixed(2)}`;
+}
+
 function renderProductSheetPrice(product) {
     const promo = typeof window.getBestPromotionForProduct === 'function'
         ? window.getBestPromotionForProduct(product.id)
         : null;
     if (promo && promo.type === 'PERCENT_OFF' && promo.percent > 0 && promo.percent <= 100) {
         const discounted = product.price * (1 - (promo.percent / 100));
-        return `<div class="p-price-wrap"><div class="p-price p-price--promo">$${discounted.toFixed(2)}</div><div class="p-price-old">$${product.price.toFixed(2)}</div></div>`;
+        return `<div class="p-price-wrap"><div class="p-price p-price--promo">${formatMoneyKs(discounted)}</div><div class="p-price-old">${formatMoneyKs(product.price)}</div></div>`;
     }
-    return `$${product.price.toFixed(2)}`;
+    return formatMoneyKs(product.price);
 }
 
 /**
@@ -150,7 +156,7 @@ function updateProductSheetTotal() {
     if (!currentProductSheet.product) return;
     const unit = getEffectiveUnitPriceForProduct(currentProductSheet.product);
     const total = unit * currentProductSheet.quantity;
-    document.getElementById('productSheetTotalPrice').textContent = `$${total.toFixed(2)}`;
+    document.getElementById('productSheetTotalPrice').textContent = formatMoneyKs(total);
 }
 
 /**
@@ -318,7 +324,7 @@ function renderCartItemsList() {
                 continue;
             }
             if (discountType === 'FIXED_PRICE') {
-                const base = fixedPrice > 0 ? `$${fixedPrice.toFixed(2)}` : 'Deal';
+                const base = fixedPrice > 0 ? `Ks ${fixedPrice.toFixed(2)}` : 'Deal';
                 const qtyText = qty > 0 ? ` ×${qty}` : '';
                 tags.push(`<div class="cart-item-promo-tag cart-item-promo-tag--percent">${escapeHtml(`${base}${qtyText}`)}</div>`);
             }
@@ -595,7 +601,7 @@ function renderCartItemsList() {
                     if (appliedDiscountType === 'PERCENT_OFF') {
                         groupPromoLine += ` · ${discountedForGroup} at ${appliedDiscountPercent.toFixed(0)}% off`;
                     } else if (appliedDiscountType === 'FIXED_PRICE') {
-                        groupPromoLine += ` · ${discountedForGroup} at $${appliedFixedPrice.toFixed(2)}`;
+                        groupPromoLine += ` · ${discountedForGroup} at Ks ${appliedFixedPrice.toFixed(2)}`;
                     }
                 } else if (discountedForGroup > 0 && appliedDiscountType === 'FREE') {
                     const itemsLabel = discountedForGroup === 1 ? 'item' : 'items';
@@ -614,7 +620,7 @@ function renderCartItemsList() {
             const qty = Number(item.qty || 0);
             const oldTotal = unitPrice * qty;
 
-            let priceHtml = `<div class="cart-item-price">$${oldTotal.toFixed(2)}</div>`;
+            let priceHtml = `<div class="cart-item-price">Ks ${oldTotal.toFixed(2)}</div>`;
             let promoTagsHtml = '';
 
             const checkoutLine = getCheckoutLineForCartItem(item);
@@ -626,12 +632,12 @@ function renderCartItemsList() {
                 if (hasDiscount) {
                     priceHtml = `
                         <div class="cart-item-price-wrap">
-                            <div class="cart-item-price cart-item-price--promo">$${lineTotal.toFixed(2)}</div>
-                            <div class="cart-item-price-old">$${lineSubtotal.toFixed(2)}</div>
+                            <div class="cart-item-price cart-item-price--promo">Ks ${lineTotal.toFixed(2)}</div>
+                            <div class="cart-item-price-old">Ks ${lineSubtotal.toFixed(2)}</div>
                         </div>
                     `;
                 } else {
-                    priceHtml = `<div class="cart-item-price">$${(Number.isFinite(lineTotal) ? lineTotal : oldTotal).toFixed(2)}</div>`;
+                    priceHtml = `<div class="cart-item-price">Ks ${(Number.isFinite(lineTotal) ? lineTotal : oldTotal).toFixed(2)}</div>`;
                 }
 
                 promoTagsHtml = renderCheckoutDiscountTags(checkoutLine);
@@ -639,8 +645,8 @@ function renderCartItemsList() {
                 const newTotal = oldTotal * (1 - (appliedPercent / 100));
                 priceHtml = `
                     <div class="cart-item-price-wrap">
-                        <div class="cart-item-price cart-item-price--promo">$${newTotal.toFixed(2)}</div>
-                        <div class="cart-item-price-old">$${oldTotal.toFixed(2)}</div>
+                        <div class="cart-item-price cart-item-price--promo">Ks ${newTotal.toFixed(2)}</div>
+                        <div class="cart-item-price-old">Ks ${oldTotal.toFixed(2)}</div>
                     </div>
                 `;
                 promoTagsHtml = `<div class="cart-item-promo-tag cart-item-promo-tag--percent">${appliedPercent.toFixed(0)}% OFF</div>`;
@@ -652,8 +658,8 @@ function renderCartItemsList() {
 
                 priceHtml = `
                     <div class="cart-item-price-wrap">
-                        <div class="cart-item-price cart-item-price--promo">$${newTotal.toFixed(2)}</div>
-                        <div class="cart-item-price-old">$${oldTotal.toFixed(2)}</div>
+                        <div class="cart-item-price cart-item-price--promo">Ks ${newTotal.toFixed(2)}</div>
+                        <div class="cart-item-price-old">Ks ${oldTotal.toFixed(2)}</div>
                     </div>
                 `;
                 promoTagsHtml = `<div class="cart-item-promo-tag cart-item-promo-tag--free">FREE ×${freeForItem}</div>`;
@@ -671,7 +677,7 @@ function renderCartItemsList() {
                     tagClass = 'cart-item-promo-tag--percent';
                 } else if (appliedDiscountType === 'FIXED_PRICE') {
                     newTotal = (unitPrice * (qty - discountedForItem)) + (appliedFixedPrice * discountedForItem);
-                    tag = `$${appliedFixedPrice.toFixed(2)} ×${discountedForItem}`;
+                    tag = `Ks ${appliedFixedPrice.toFixed(2)} ×${discountedForItem}`;
                 } else {
                     newTotal = unitPrice * (qty - discountedForItem);
                     tag = `FREE ×${discountedForItem}`;
@@ -681,8 +687,8 @@ function renderCartItemsList() {
 
                 priceHtml = `
                     <div class="cart-item-price-wrap">
-                        <div class="cart-item-price cart-item-price--promo">$${newTotal.toFixed(2)}</div>
-                        <div class="cart-item-price-old">$${oldTotal.toFixed(2)}</div>
+                        <div class="cart-item-price cart-item-price--promo">Ks ${newTotal.toFixed(2)}</div>
+                        <div class="cart-item-price-old">Ks ${oldTotal.toFixed(2)}</div>
                     </div>
                 `;
                 promoTagsHtml = `<div class="cart-item-promo-tag ${tagClass}">${escapeHtml(tag)}</div>`;

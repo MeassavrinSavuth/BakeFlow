@@ -164,6 +164,7 @@ func SetupRoutes() http.Handler {
 	router.Handle("/api/admin/top-products", controllers.RequireAdmin(http.HandlerFunc(productController.AdminGetTopProducts))).Methods("GET", "OPTIONS")
 	// Admin Product Sales (aggregated sold counts)
 	router.Handle("/api/admin/product-sales", controllers.RequireAdmin(http.HandlerFunc(productController.AdminGetProductSales))).Methods("GET", "OPTIONS")
+	router.Handle("/api/admin/daily-stock", controllers.RequireAdmin(http.HandlerFunc(controllers.AdminGetDailyStockLogs))).Methods("GET", "OPTIONS")
 
 	// Product Alerts
 	router.HandleFunc("/api/products/low-stock", productController.GetLowStockProducts).Methods("GET", "OPTIONS")

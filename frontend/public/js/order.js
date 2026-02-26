@@ -939,9 +939,9 @@ async function submitPreorderDirect(opts) {
                 `Size: ${cake.size}`,
                 cake.layers ? `Layers: ${cake.layers}` : '',
                 cake.cream ? `Cream: ${cake.cream}` : '',
-                cake.sizeExtra > 0 ? `Size +$${cake.sizeExtra.toFixed(2)}` : '',
-                cake.layerExtra > 0 ? `Layer +$${cake.layerExtra.toFixed(2)}` : '',
-                cake.creamExtra > 0 ? `Cream +$${cake.creamExtra.toFixed(2)}` : '',
+                cake.sizeExtra > 0 ? `Size +Ks ${cake.sizeExtra.toFixed(2)}` : '',
+                cake.layerExtra > 0 ? `Layer +Ks ${cake.layerExtra.toFixed(2)}` : '',
+                cake.creamExtra > 0 ? `Cream +Ks ${cake.creamExtra.toFixed(2)}` : '',
                 cake.message ? `Cake message: ${cake.message}` : '',
                 cake.notes ? `Notes: ${cake.notes}` : '',
             ].filter(Boolean);
@@ -981,9 +981,9 @@ async function submitPreorderDirect(opts) {
             selectedName ? `Cake: ${selectedName}` : '',
             `Flavor: ${flavor}`, `Size: ${size}`,
             layers ? `Layers: ${layers}` : '', cream ? `Cream: ${cream}` : '',
-            sizePrice > 0 ? `Size price: $${sizePrice.toFixed(2)}` : '',
-            layerPrice > 0 ? `Layer price: $${layerPrice.toFixed(2)}` : '',
-            creamPrice > 0 ? `Cream price: $${creamPrice.toFixed(2)}` : '',
+            sizePrice > 0 ? `Size price: Ks ${sizePrice.toFixed(2)}` : '',
+            layerPrice > 0 ? `Layer price: Ks ${layerPrice.toFixed(2)}` : '',
+            creamPrice > 0 ? `Cream price: Ks ${creamPrice.toFixed(2)}` : '',
             cakeMessage ? `Cake message: ${cakeMessage}` : '',
             notes ? `Notes: ${notes}` : '',
         ].filter(Boolean);
@@ -1173,7 +1173,7 @@ function showCustomOrderChoiceDialog(choiceData, orderData, name, phone) {
     orderItem.onmouseout = () => { orderItem.style.background = 'transparent'; };
     const orderInfo = document.createElement('div');
     const statusLabel = (existingOrder.status || 'pending').toUpperCase();
-    orderInfo.textContent = `Order #BF-${existingOrderId} • ${existingOrder.items || 0} items • $${Number(existingOrder.amount || 0).toFixed(2)} • ${statusLabel}`;
+    orderInfo.textContent = `Order #BF-${existingOrderId} • ${existingOrder.items || 0} items • Ks ${Number(existingOrder.amount || 0).toFixed(2)} • ${statusLabel}`;
     orderInfo.style.cssText = `
         flex: 1; font-size: 14px; color: #333; font-weight: 500;
     `;

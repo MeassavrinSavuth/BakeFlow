@@ -213,7 +213,7 @@ export default function CustomerPaymentFlow({ order }) {
                     <p style={{
                         color: 'rgba(255,255,255,0.85)', fontSize: '14px', margin: 0,
                     }}>
-                        Order #{order.id} · ${order.total_amount?.toFixed(2)}
+                        Order #{order.id} · Ks {order.total_amount?.toFixed(2)}
                     </p>
                 </div>
 

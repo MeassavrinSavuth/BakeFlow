@@ -173,7 +173,7 @@ function renderProducts() {
                 ${p.description ? `<div class="p-desc">${escapeHtml(p.description)}</div>` : ''}
             </div>
             <div class="p-cta">
-                <div class="p-price">$${p.price.toFixed(2)}</div>
+                <div class="p-price">Ks ${p.price.toFixed(2)}</div>
                 <div class="qty-controls">
                     <button class="qty-btn minus" onclick="decreaseQty(${p.id})" id="dec-${p.id}" disabled>−</button>
                     <div class="qty-display" id="qty-${p.id}">0</div>
@@ -252,11 +252,11 @@ async function updateCart() {
             const discount = Number(checkout.discount || 0);
             const hasPromo = ((Array.isArray(checkout.appliedPromotions) && checkout.appliedPromotions.length > 0) || checkout.appliedPromotion) && discount > 0;
             
-            if (barSubtotalEl) barSubtotalEl.textContent = `$${subtotal.toFixed(2)}`;
-            if (barDiscountEl) barDiscountEl.textContent = `-$${discount.toFixed(2)}`;
+            if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${subtotal.toFixed(2)}`;
+            if (barDiscountEl) barDiscountEl.textContent = `-Ks ${discount.toFixed(2)}`;
             if (barDiscountRowEl) barDiscountRowEl.style.display = hasPromo ? 'flex' : 'none';
-            if (barTotalEl) barTotalEl.textContent = `$${displayTotal}`;
-            if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • $${displayTotal}`;
+            if (barTotalEl) barTotalEl.textContent = `Ks ${displayTotal}`;
+            if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${displayTotal}`;
 
             // Store checkout data for order submission
             window.currentCheckout = checkout;
@@ -264,26 +264,26 @@ async function updateCart() {
             console.error('Failed to calculate checkout:', e);
             // Fallback to simple calculation
             const total = cartItems.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
-            if (barSubtotalEl) barSubtotalEl.textContent = `$${total.toFixed(2)}`;
-            if (barDiscountEl) barDiscountEl.textContent = `-$${(0).toFixed(2)}`;
+            if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${total.toFixed(2)}`;
+            if (barDiscountEl) barDiscountEl.textContent = `-Ks ${(0).toFixed(2)}`;
             if (barDiscountRowEl) barDiscountRowEl.style.display = 'none';
-            if (barTotalEl) barTotalEl.textContent = `$${total.toFixed(2)}`;
-            if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • $${total.toFixed(2)}`;
+            if (barTotalEl) barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
+            if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${total.toFixed(2)}`;
         }
     } else {
         // Fallback if promotions.js not loaded
         const total = cartItems.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
-        if (barSubtotalEl) barSubtotalEl.textContent = `$${total.toFixed(2)}`;
-        if (barDiscountEl) barDiscountEl.textContent = `-$${(0).toFixed(2)}`;
+        if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${total.toFixed(2)}`;
+        if (barDiscountEl) barDiscountEl.textContent = `-Ks ${(0).toFixed(2)}`;
         if (barDiscountRowEl) barDiscountRowEl.style.display = 'none';
-        if (barTotalEl) barTotalEl.textContent = `$${total.toFixed(2)}`;
-        if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • $${total.toFixed(2)}`;
+        if (barTotalEl) barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
+        if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${total.toFixed(2)}`;
     }
 
     if (pendingSchedule && barTotalEl) {
         const when = `${pendingSchedule.date} ${pendingSchedule.time}`;
         const total = (window.currentCheckout?.total || cartItems.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0));
-        barTotalEl.textContent = `$${Number(total).toFixed(2)}`;
+        barTotalEl.textContent = `Ks ${Number(total).toFixed(2)}`;
     }
     
     adjustSafePadding();

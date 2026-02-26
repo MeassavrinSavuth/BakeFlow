@@ -441,7 +441,16 @@ func AtomicPurchase(productID, quantity, orderID int) error {
 		log.Printf("Warning: Failed to log stock transaction: %v", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	logDate := TruncateDate(time.Now())
+	soldSoFar, _ := GetDailySold(logDate, productID)
+	opening := stock + soldSoFar
+	_ = EnsureDailyStockLog(logDate, productID, opening)
+	_ = AddDailyStockDeltas(logDate, productID, 0, 0, 0, quantity)
+	return nil
 }
 
 // RestoreStock returns stock to available pool (cancellation, refund)
@@ -479,7 +488,16 @@ func RestoreStock(productID, quantity, orderID int, reason string) error {
 		) VALUES ($1, 'restock', $2, $3, $4, $5, $5, $6, $7)
 	`, productID, quantity, stock, stock+quantity, reserved, orderID, reason)
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	logDate := TruncateDate(time.Now())
+	soldSoFar, _ := GetDailySold(logDate, productID)
+	opening := stock + soldSoFar
+	_ = EnsureDailyStockLog(logDate, productID, opening)
+	_ = AddDailyStockDeltas(logDate, productID, 0, 0, 0, -quantity)
+	return nil
 }
 
 // CleanupExpiredReservations releases all expired reservations

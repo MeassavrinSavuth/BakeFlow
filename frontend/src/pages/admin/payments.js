@@ -15,7 +15,7 @@ export default function AdminPayments() {
     const formatMoney = (value) => {
         const num = Number(value);
         if (!Number.isFinite(num)) return '—';
-        return `$${num.toFixed(2)}`;
+        return `Ks ${num.toFixed(2)}`;
     };
 
     useEffect(() => {

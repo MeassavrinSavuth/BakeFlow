@@ -489,11 +489,11 @@ function renderCustomCakeCart() {
     if (scheduleSection) scheduleSection.style.display = '';
     if (submitBtn) submitBtn.style.display = '';
     if (countEl) countEl.textContent = `${cart.length} cake${cart.length > 1 ? 's' : ''}`;
-    if (totalEl) totalEl.textContent = `$${getCustomCakeCartTotal().toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `Ks ${getCustomCakeCartTotal().toFixed(2)}`;
 
     const submitText = document.getElementById('preorderSubmitText');
     if (submitText) {
-        submitText.textContent = `Order ${cart.length} Cake${cart.length > 1 ? 's' : ''} — $${getCustomCakeCartTotal().toFixed(2)}`;
+        submitText.textContent = `Order ${cart.length} Cake${cart.length > 1 ? 's' : ''} — Ks ${getCustomCakeCartTotal().toFixed(2)}`;
     }
 
     listEl.innerHTML = '';
@@ -519,7 +519,7 @@ function renderCustomCakeCart() {
 
         const priceEl = document.createElement('div');
         priceEl.className = 'preorder-cart-card-price';
-        priceEl.textContent = `$${cake.price.toFixed(2)}`;
+        priceEl.textContent = `Ks ${cake.price.toFixed(2)}`;
 
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
@@ -553,7 +553,7 @@ function openPreorderSheet() {
 
 function formatPreorderPrice(value) {
     const num = Number(value || 0);
-    return `$${num.toFixed(2)}`;
+    return `Ks ${num.toFixed(2)}`;
 }
 
 function normalizePreorderKey(value) {
@@ -1486,15 +1486,15 @@ function renderProducts() {
                 ${isSoldOut ? `<div class="p-price">—</div>` : (
                     isFreeApplied
                         ? `<div class="p-price-wrap">
-                             <div class="p-price p-price--promo">$0.00</div>
-                             <div class="p-price-old">$${p.price.toFixed(2)}</div>
+                             <div class="p-price p-price--promo">Ks 0.00</div>
+                             <div class="p-price-old">Ks ${p.price.toFixed(2)}</div>
                            </div>`
                         : hasPercentPromo
                         ? `<div class="p-price-wrap">
-                             <div class="p-price p-price--promo">$${discountedPrice.toFixed(2)}</div>
-                             <div class="p-price-old">$${p.price.toFixed(2)}</div>
+                             <div class="p-price p-price--promo">Ks ${discountedPrice.toFixed(2)}</div>
+                             <div class="p-price-old">Ks ${p.price.toFixed(2)}</div>
                            </div>`
-                        : `<div class="p-price">$${p.price.toFixed(2)}</div>`
+                        : `<div class="p-price">Ks ${p.price.toFixed(2)}</div>`
                 )}
                 ${bogoHint ? `<div class="p-promo-hint">${escapeHtml(bogoHint)}</div>` : ''}
                 <div class="qty-controls${isSoldOut ? ' qty-controls--disabled' : ''}">

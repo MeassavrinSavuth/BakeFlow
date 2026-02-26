@@ -358,13 +358,13 @@ export default function OrdersPage() {
   ];
 
   const handleExportExcel = useCallback(async () => {
-    const getNameAndPhone = (rawName) => {
-      const nameValue = String(rawName || '').trim();
-      const match = nameValue.match(/^(.*)\((.*)\)\s*$/);
-      if (!match) return { name: nameValue || 'Customer', phone: '' };
-      return { name: match[1].trim() || 'Customer', phone: match[2].trim() || '' };
+    const now = new Date();
+    const monthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+    const formatDateKey = (date) => {
+      const pad2 = (value) => String(value).padStart(2, '0');
+      return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
     };
-
     const parseOrderedItemsString = (value) => {
       if (!value) return [];
       const parts = String(value).split(/•|,/).map(part => part.trim()).filter(Boolean);
@@ -374,196 +374,267 @@ export default function OrdersPage() {
         return { product: match[1].trim(), quantity: Number(match[2]), price: 0 };
       });
     };
+    const normalizeName = (value) => String(value || '').trim().toLowerCase();
+    const headers = [
+      'Date', 'Active Sr No', 'Order ID', 'Customer', 'Phone', 'Name', 'Op', 'In', 'Exp', 'FOC',
+      'Shop Sold', 'Cl', 'MSP', 'Price', 'Amount', 'WH Price', 'MSP Amt'
+    ];
 
-    const formatDateKey = (date) => {
-      const pad2 = (value) => String(value).padStart(2, '0');
-      return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-    };
-    const normalizeProductName = (value) => String(value || '').trim().toLowerCase();
-    const formatMonthKey = (date) => {
-      const pad2 = (value) => String(value).padStart(2, '0');
-      return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
-    };
-    const monthRangeLabel = (year, monthIndex) => {
-      const pad2 = (value) => String(value).padStart(2, '0');
-      const start = `${year}-${pad2(monthIndex + 1)}-01`;
-      const lastDay = new Date(year, monthIndex + 1, 0).getDate();
-      const end = `${year}-${pad2(monthIndex + 1)}-${pad2(lastDay)}`;
-      return `${start} - ${end}`;
-    };
-
-    const res = await fetch(`${API_BASE}/api/admin/orders?order_status=delivered`);
-    const data = await res.json().catch(() => ({}));
-    const exportOrders = Array.isArray(data.orders) ? data.orders : [];
-    const productsRes = await fetch(`${API_BASE}/api/products?include_stock=1&limit=1000`);
-    const productsData = await productsRes.json().catch(() => ({}));
-    const products = Array.isArray(productsData.products) ? productsData.products : [];
-    const deliveredOrders = exportOrders.filter(order => {
-      const statusValue = String(order?.status || '').toLowerCase().trim();
-      return statusValue === 'delivered';
-    });
-    const rows = deliveredOrders.map(order => {
-      const { name, phone } = getNameAndPhone(order.customer_name);
-      const items = Array.isArray(order.items) ? order.items : [];
-      const orderedItems = items.length
-        ? items.map(it => `${it.product} × ${it.quantity}`).join(' • ')
-        : '—';
-      const subtotal = Number(order.subtotal) || 0;
-      const deliveryFee = Number(order.delivery_fee) || 0;
-      const discount = Number(order.discount) || 0;
-      const totalAmountRaw = Number(order.total_amount);
-      const totalAmount = Number.isFinite(totalAmountRaw) && !(totalAmountRaw === 0 && subtotal > 0)
-        ? totalAmountRaw
-        : Math.max(0, subtotal + deliveryFee - discount);
-      const rawMethod = order.payment_method ?? order.paymentMethod ?? 'Cash on Delivery';
-      return {
-        'Order ID': order.id ?? '',
-        'Customer Name': name,
-        'Phone Number': order.customer_phone || phone || '',
-        'Ordered Items': orderedItems,
-        'Total Price': totalAmount,
-        'Payment Method': rawMethod,
-        'Order Status': order.status || '',
-        'Order Date': order.created_at ? new Date(order.created_at).toLocaleString() : '',
-        'Delivery Address': order.address || ''
-      };
-    });
-
-    const summaryMap = new Map();
-    const soldByProduct = new Map();
-    const monthSales = new Map();
-    const dateKeys = [];
-    deliveredOrders.forEach(order => {
-      const dateValue = order.created_at ? new Date(order.created_at) : null;
-      const dateKey = dateValue && !Number.isNaN(dateValue.getTime()) ? formatDateKey(dateValue) : '';
-      const monthKey = dateValue && !Number.isNaN(dateValue.getTime()) ? formatMonthKey(dateValue) : '';
-      if (dateKey) dateKeys.push(dateKey);
-      const baseItems = Array.isArray(order.items) && order.items.length > 0
-        ? order.items
-        : parseOrderedItemsString(order.items_display || order.ordered_items || '');
-      baseItems.forEach(item => {
-        const productName = (item.product || item.name || '').trim();
-        if (!productName) return;
-        const quantity = Number(item.quantity ?? item.qty ?? 0);
-        const safeQty = Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
-        if (!safeQty) return;
-        const price = Number(item.price ?? item.unit_price ?? 0);
-        const unitPrice = Number.isFinite(price) && price >= 0 ? price : 0;
-        const lineTotal = unitPrice * safeQty;
-        const key = `${dateKey}||${productName}`;
-        const current = summaryMap.get(key) || { date: dateKey, productName, quantity: 0, revenue: 0, orderIds: [] };
-        current.quantity += safeQty;
-        current.revenue += lineTotal;
-        const orderIdValue = order.id ?? '';
-        if (orderIdValue !== '' && !current.orderIds.includes(orderIdValue)) {
-          current.orderIds.push(orderIdValue);
-        }
-        summaryMap.set(key, current);
-        const soldKey = normalizeProductName(productName);
-        const soldCurrent = soldByProduct.get(soldKey) || { name: productName, quantity: 0 };
-        soldCurrent.quantity += safeQty;
-        if (!soldCurrent.name) {
-          soldCurrent.name = productName;
-        }
-        soldByProduct.set(soldKey, soldCurrent);
-        if (monthKey) {
-          const perMonth = monthSales.get(monthKey) || new Map();
-          const mEntry = perMonth.get(soldKey) || { name: productName, quantity: 0, revenue: 0, orderIds: [] };
-          mEntry.quantity += safeQty;
-          mEntry.revenue += lineTotal;
-          if (!mEntry.name) {
-            mEntry.name = productName;
-          }
-          if (orderIdValue !== '' && !mEntry.orderIds.includes(orderIdValue)) {
-            mEntry.orderIds.push(orderIdValue);
-          }
-          perMonth.set(soldKey, mEntry);
-          monthSales.set(monthKey, perMonth);
-        }
+    const ordersRows = [headers];
+    const ordersByDay = new Map();
+    const entries = [];
+    const dailyLogsByKey = new Map();
+    const dailyLogsByDate = new Map();
+    let srNo = 1;
+    let stockByName = new Map();
+    try {
+      const monthStartKey = formatDateKey(monthDate);
+      const monthEndDate = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+      const monthEndKey = formatDateKey(monthEndDate);
+      const logsRes = await fetch(`${API_BASE}/api/admin/daily-stock?start=${monthStartKey}&end=${monthEndKey}`, {
+        headers: buildAuthHeaders()
       });
-    });
+      const logsData = await logsRes.json().catch(() => ({}));
+      const logs = Array.isArray(logsData.logs) ? logsData.logs : [];
+      logs.forEach((logItem) => {
+        const rawDate = String(logItem.log_date || '').trim();
+        const dateKey = rawDate ? rawDate.split('T')[0] : '';
+        if (!dateKey) {
+          const logDate = logItem.log_date ? new Date(logItem.log_date) : null;
+          if (!logDate || Number.isNaN(logDate.getTime())) return;
+          const fallbackKey = formatDateKey(logDate);
+          if (!fallbackKey) return;
+          const nameKey = normalizeName(logItem.product_name || logItem.productName);
+          if (!nameKey) return;
+          dailyLogsByKey.set(`${fallbackKey}||${nameKey}`, logItem);
+          const list = dailyLogsByDate.get(fallbackKey) || [];
+          list.push(logItem);
+          dailyLogsByDate.set(fallbackKey, list);
+          return;
+        }
+        const nameKey = normalizeName(logItem.product_name || logItem.productName);
+        if (!nameKey) return;
+        dailyLogsByKey.set(`${dateKey}||${nameKey}`, logItem);
+        const list = dailyLogsByDate.get(dateKey) || [];
+        list.push(logItem);
+        dailyLogsByDate.set(dateKey, list);
+      });
+      const productsRes = await fetch(`${API_BASE}/api/products?include_stock=1&limit=1000`);
+      const productsData = await productsRes.json().catch(() => ({}));
+      const products = Array.isArray(productsData.products) ? productsData.products : [];
+      stockByName = new Map(
+        products.map(product => [
+          normalizeName(product?.name),
+          Number.isFinite(Number(product?.stock)) ? Number(product.stock) : 0
+        ])
+      );
+      const res = await fetch(`${API_BASE}/api/admin/orders?order_status=delivered`);
+      const data = await res.json().catch(() => ({}));
+      const exportOrders = Array.isArray(data.orders) ? data.orders : [];
+      exportOrders.forEach((order) => {
+        const createdAt = order?.created_at ? new Date(order.created_at) : null;
+        if (!createdAt || Number.isNaN(createdAt.getTime())) return;
+        if (createdAt < monthDate) return;
+        const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
+        if (createdAt > monthEnd) return;
+        const dateKey = formatDateKey(createdAt);
+        const baseItems = Array.isArray(order.items) && order.items.length > 0
+          ? order.items
+          : parseOrderedItemsString(order.items_display || order.ordered_items || '');
+        baseItems.forEach((item) => {
+          const productName = String(item.product || item.name || '').trim();
+          if (!productName) return;
+          const quantity = Number(item.quantity ?? item.qty ?? 0);
+          const safeQty = Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
+          if (!safeQty) return;
+          const price = Number(item.price ?? item.unit_price ?? 0);
+          const unitPrice = Number.isFinite(price) && price >= 0 ? price : 0;
+          entries.push({
+            dateKey,
+            date: new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate()),
+            orderId: order.id ?? '',
+            customerName: order.customer_name ?? '',
+            customerPhone: order.customer_phone ?? '',
+            productName,
+            qty: safeQty,
+            price: unitPrice
+          });
+        });
+      });
+      const soldByDayProduct = new Map();
+      entries.forEach((entry) => {
+        const key = `${entry.dateKey}||${normalizeName(entry.productName)}`;
+        soldByDayProduct.set(key, (soldByDayProduct.get(key) || 0) + entry.qty);
+      });
+      entries.forEach((entry) => {
+        const soldKey = `${entry.dateKey}||${normalizeName(entry.productName)}`;
+        const soldForDay = soldByDayProduct.get(soldKey) || 0;
+        const baseStock = stockByName.get(normalizeName(entry.productName)) ?? 0;
+        const logItem = dailyLogsByKey.get(soldKey);
+        const openingStock = Number.isFinite(Number(logItem?.opening_stock))
+          ? Number(logItem.opening_stock)
+          : baseStock + soldForDay;
+        const stockIn = Number.isFinite(Number(logItem?.stock_in)) ? Number(logItem.stock_in) : 0;
+        const expired = Number.isFinite(Number(logItem?.expired)) ? Number(logItem.expired) : 0;
+        const foc = Number.isFinite(Number(logItem?.foc)) ? Number(logItem.foc) : 0;
+        const rowIndex = ordersRows.length + 1;
+        const row = new Array(headers.length).fill('');
+        row[0] = entry.date;
+        row[1] = srNo;
+        row[2] = entry.orderId;
+        row[3] = entry.customerName;
+        row[4] = entry.customerPhone;
+        row[5] = entry.productName;
+        row[6] = openingStock;
+        row[7] = stockIn;
+        row[8] = expired;
+        row[9] = foc;
+        row[10] = entry.qty;
+        row[13] = entry.price;
+        row[11] = { f: `G${rowIndex}+H${rowIndex}-I${rowIndex}-J${rowIndex}-K${rowIndex}` };
+        row[14] = { f: `K${rowIndex}*N${rowIndex}` };
+        row[16] = { f: `M${rowIndex}*P${rowIndex}` };
+        ordersRows.push(row);
+        const dayRows = ordersByDay.get(entry.dateKey) || [];
+        dayRows.push({
+          date: entry.date,
+          name: entry.productName,
+          qty: entry.qty,
+          price: entry.price,
+          op: openingStock,
+          stockIn,
+          expired,
+          foc
+        });
+        ordersByDay.set(entry.dateKey, dayRows);
+        srNo += 1;
+      });
+    } catch (e) {
+      console.error('Export fetch failed', e);
+    }
 
-    const sortedSummaries = Array.from(summaryMap.values()).sort((a, b) => {
-      if (a.date === b.date) return a.productName.localeCompare(b.productName);
-      return a.date.localeCompare(b.date);
-    });
+    const ordersSheet = XLSX.utils.aoa_to_sheet(ordersRows);
+    ordersSheet['!cols'] = [
+      { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 20 }, { wch: 16 }, { wch: 24 },
+      { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 10 },
+      { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
+    ];
 
-    const summaryRows = sortedSummaries.map(row => {
-      const unitPrice = row.quantity > 0 ? row.revenue / row.quantity : 0;
-      return [row.date, row.orderIds.join(', '), row.productName, row.quantity, unitPrice, row.revenue];
-    });
+    const ordersLastRow = Math.max(2, ordersRows.length);
+    for (let row = 2; row <= ordersLastRow; row += 1) {
+      const dateCell = `A${row}`;
+      const clCell = `L${row}`;
+      const amountCell = `O${row}`;
+      const mspAmtCell = `Q${row}`;
+      if (ordersSheet[dateCell]) ordersSheet[dateCell].z = 'yyyy-mm-dd';
+      if (ordersSheet[amountCell]) ordersSheet[amountCell].z = '#,##0.00';
+      if (ordersSheet[mspAmtCell]) ordersSheet[mspAmtCell].z = '#,##0.00';
+      if (ordersSheet[`N${row}`]) ordersSheet[`N${row}`].z = '#,##0.00';
+      if (ordersSheet[`P${row}`]) ordersSheet[`P${row}`].z = '#,##0.00';
+      if (ordersSheet[clCell] && !ordersSheet[clCell].f) {
+        ordersSheet[clCell].f = `G${row}+H${row}-I${row}-J${row}-K${row}`;
+      }
+    }
 
-    const rangeStart = dateKeys.length ? dateKeys.reduce((min, v) => (v < min ? v : min), dateKeys[0]) : '';
-    const rangeEnd = dateKeys.length ? dateKeys.reduce((max, v) => (v > max ? v : max), dateKeys[0]) : '';
-    const rangeLabel = rangeStart && rangeEnd ? `${rangeStart} - ${rangeEnd}` : '';
-    const summarySheetData = [
-      ['Report Title', 'Sales Summary'],
-      ['Date Range', rangeLabel],
-      ['Generated Timestamp', new Date().toLocaleString()],
+    const summaryRows = [
+      ['Selected Month', monthDate],
       [],
-      ['Order Date', 'Order IDs', 'Product Name', 'Total Quantity Sold', 'Unit Price', 'Total Revenue'],
-      ...summaryRows
+      ['Total Sale Amount', { f: `SUMIFS(Orders!$O$2:$O$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
+      ['Total Shop Sold', { f: `SUMIFS(Orders!$K$2:$K$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
+      ['Total MSP Amount', { f: `SUMIFS(Orders!$Q$2:$Q$${ordersLastRow},Orders!$A$2:$A$${ordersLastRow},">="&EOMONTH($B$1,-1)+1,Orders!$A$2:$A$${ordersLastRow},"<="&EOMONTH($B$1,0))` }],
+      [],
+      ['Payment', ''],
+      ['Cash', ''],
+      ['KPay', ''],
+      ['Total Payment', { f: 'B8+B9' }],
+      ['Checking Difference', { f: 'B3-B10' }]
     ];
-    const usedProductKeys = new Set();
-    const stockRows = products.map(product => {
-      const productName = String(product?.name || '').trim();
-      const productKey = normalizeProductName(productName);
-      const soldEntry = soldByProduct.get(productKey);
-      const soldQuantity = soldEntry ? soldEntry.quantity : 0;
-      const stockValue = Number(product?.stock);
-      const stock = Number.isFinite(stockValue) ? stockValue : '';
-      const remaining = Number.isFinite(stockValue) ? stockValue - soldQuantity : '';
-      usedProductKeys.add(productKey);
-      return [productName || '—', soldQuantity, stock, remaining];
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+    summarySheet['!cols'] = [{ wch: 22 }, { wch: 20 }];
+    if (summarySheet.B1) summarySheet.B1.z = 'mmmm yyyy';
+    ['B3', 'B5', 'B8', 'B9', 'B10', 'B11'].forEach((cell) => {
+      if (summarySheet[cell]) summarySheet[cell].z = '#,##0.00';
     });
-    soldByProduct.forEach((value, key) => {
-      if (usedProductKeys.has(key)) return;
-      stockRows.push([value.name || '—', value.quantity, '', '']);
-    });
-    const stockSheetData = [
-      ['Product Name', 'Total Sold', 'Current Stock', 'Stock Difference'],
-      ...stockRows
-    ];
 
-    const ordersHeader = ['Order ID', 'Customer Name', 'Phone Number', 'Ordered Items', 'Total Price', 'Payment Method', 'Order Status', 'Order Date', 'Delivery Address'];
-    const ordersSheetData = [
-      ordersHeader,
-      ...rows.map(row => ordersHeader.map(key => row[key]))
-    ];
-    const ordersSheet = XLSX.utils.aoa_to_sheet(ordersSheetData);
-    const salesSheet = XLSX.utils.aoa_to_sheet(summarySheetData);
-    const stockSheet = XLSX.utils.aoa_to_sheet(stockSheetData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, ordersSheet, 'Orders');
-    XLSX.utils.book_append_sheet(workbook, salesSheet, 'Sales Summary');
-    XLSX.utils.book_append_sheet(workbook, stockSheet, 'Stock Summary');
-    const monthKeys = Array.from(monthSales.keys()).sort((a, b) => a.localeCompare(b));
-    monthKeys.forEach(mk => {
-      const year = Number(mk.split('-')[0]);
-      const monthIndex = Number(mk.split('-')[1]) - 1;
-      const perMonth = monthSales.get(mk) || new Map();
-      const rowsForMonth = Array.from(perMonth.values()).map(entry => {
-        const unitPrice = entry.quantity > 0 ? entry.revenue / entry.quantity : 0;
-        return [entry.name, entry.orderIds.join(', '), entry.quantity, unitPrice, entry.revenue];
-      });
-      rowsForMonth.sort((a, b) => {
-        const nameA = String(a[0] || '');
-        const nameB = String(b[0] || '');
-        return nameA.localeCompare(nameB);
-      });
-      const sheetData = [
-        ['Month', mk],
-        ['Range', monthRangeLabel(year, monthIndex)],
-        [],
-        ['Product Name', 'Order IDs', 'Total Quantity Sold', 'Unit Price', 'Total Revenue'],
-        ...rowsForMonth
-      ];
-      const sheet = XLSX.utils.aoa_to_sheet(sheetData);
-      XLSX.utils.book_append_sheet(workbook, sheet, `Sales ${mk}`);
-    });
-    const fileName = `sales-report_${formatDateKey(new Date())}.xlsx`;
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Monthly Summary');
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const dateObj = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
+      const dateKey = formatDateKey(dateObj);
+      const dayItems = ordersByDay.get(dateKey) || [];
+      const dayRows = [headers];
+      const logItemsForDay = dailyLogsByDate.get(dateKey) || [];
+      if (dayItems.length === 0 && logItemsForDay.length === 0) {
+        const row = new Array(headers.length).fill('');
+        row[0] = dateObj;
+        row[1] = 1;
+        row[6] = 0;
+        row[7] = 0;
+        row[8] = 0;
+        row[9] = 0;
+        row[11] = { f: 'G2+H2-I2-J2-K2' };
+        row[14] = { f: 'K2*N2' };
+        row[16] = { f: 'M2*P2' };
+        dayRows.push(row);
+      } else {
+        const byProduct = new Map();
+        dayItems.forEach((item) => {
+          const key = normalizeName(item.name);
+          const existing = byProduct.get(key) || { ...item, qty: 0 };
+          existing.qty += item.qty;
+          byProduct.set(key, existing);
+        });
+        logItemsForDay.forEach((logItem) => {
+          const nameKey = normalizeName(logItem.product_name || logItem.productName);
+          if (!nameKey) return;
+          if (byProduct.has(nameKey)) return;
+          byProduct.set(nameKey, {
+            name: logItem.product_name || logItem.productName,
+            qty: Number.isFinite(Number(logItem.sold)) ? Number(logItem.sold) : 0,
+            price: 0,
+            op: Number.isFinite(Number(logItem.opening_stock)) ? Number(logItem.opening_stock) : 0,
+            stockIn: Number.isFinite(Number(logItem.stock_in)) ? Number(logItem.stock_in) : 0,
+            expired: Number.isFinite(Number(logItem.expired)) ? Number(logItem.expired) : 0,
+            foc: Number.isFinite(Number(logItem.foc)) ? Number(logItem.foc) : 0
+          });
+        });
+        Array.from(byProduct.values()).forEach((item, index) => {
+          const rowIndex = index + 2;
+          const row = new Array(headers.length).fill('');
+          row[0] = dateObj;
+          row[1] = index + 1;
+          row[5] = item.name;
+          row[6] = item.op ?? 0;
+          row[7] = item.stockIn ?? 0;
+          row[8] = item.expired ?? 0;
+          row[9] = item.foc ?? 0;
+          row[10] = item.qty;
+          row[13] = item.price;
+          row[11] = { f: `G${rowIndex}+H${rowIndex}-I${rowIndex}-J${rowIndex}-K${rowIndex}` };
+          row[14] = { f: `K${rowIndex}*N${rowIndex}` };
+          row[16] = { f: `M${rowIndex}*P${rowIndex}` };
+          dayRows.push(row);
+        });
+      }
+      const daySheet = XLSX.utils.aoa_to_sheet(dayRows);
+      daySheet['!cols'] = ordersSheet['!cols'];
+      const dayLastRow = Math.max(2, dayRows.length);
+      for (let row = 2; row <= dayLastRow; row += 1) {
+        const dateCell = `A${row}`;
+        const amountCell = `O${row}`;
+        const mspAmtCell = `Q${row}`;
+        if (daySheet[dateCell]) daySheet[dateCell].z = 'yyyy-mm-dd';
+        if (daySheet[amountCell]) daySheet[amountCell].z = '#,##0.00';
+        if (daySheet[mspAmtCell]) daySheet[mspAmtCell].z = '#,##0.00';
+        if (daySheet[`N${row}`]) daySheet[`N${row}`].z = '#,##0.00';
+        if (daySheet[`P${row}`]) daySheet[`P${row}`].z = '#,##0.00';
+      }
+      XLSX.utils.book_append_sheet(workbook, daySheet, dateKey);
+    }
+    const fileName = `bakery-order-management_${formatDateKey(now)}.xlsx`;
     XLSX.writeFile(workbook, fileName);
-  }, [API_BASE]);
+  }, [API_BASE, buildAuthHeaders]);
 
   const getStatusSteps = (currentStatus, deliveryType) => {
     const isDelivery = String(deliveryType || '').toLowerCase() === 'delivery';

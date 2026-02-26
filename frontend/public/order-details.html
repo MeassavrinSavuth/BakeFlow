@@ -164,7 +164,7 @@
     const buildInvoiceLines = (d) => {
       const money = (v) => {
         const n = toNumber(v);
-        return Number.isFinite(n) ? `$${n.toFixed(2)}` : '—';
+        return Number.isFinite(n) ? `Ks ${n.toFixed(2)}` : '—';
       };
       const dt = new Date(d.created_at || Date.now());
       const lines = [];
@@ -352,7 +352,7 @@
       const slipUrl = d.payment_proof_url || d.proof_url || d.payment_proof || d.paymentSlip || '';
       const formatMoney = (value) => {
         const num = toNumber(value);
-        return Number.isFinite(num) ? `$${num.toFixed(2)}` : '—';
+        return Number.isFinite(num) ? `Ks ${num.toFixed(2)}` : '—';
       };
       const deliveryValue = d.delivery_type || (String(d.address || '').toLowerCase().includes('pickup') ? 'Pick Up' : 'Delivery');
       const deliveryEl = document.getElementById('deliveryMethod');

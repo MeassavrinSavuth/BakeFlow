@@ -261,7 +261,7 @@ export default function NewProductPage() {
                             </select>
                           </div>
                           <div className="col-6 col-md-3">
-                            <label className="form-label fw-semibold">Price ($) *</label>
+                            <label className="form-label fw-semibold">Price (Ks) *</label>
                             <input type="number" className="form-control" min="0" step="0.01" value={price} onChange={(e)=>setPrice(e.target.value)} required />
                           </div>
                           <div className="col-6 col-md-3">

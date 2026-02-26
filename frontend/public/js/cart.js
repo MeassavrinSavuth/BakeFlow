@@ -313,11 +313,11 @@ function updateCart() {
     const barSavingsEl = document.getElementById('barSavings');
     
     if (barItemsEl) barItemsEl.textContent = itemCount;
-    if (barSubtotalEl) barSubtotalEl.textContent = `$${total.toFixed(2)}`;
-    if (barDiscountEl) barDiscountEl.textContent = `-$${(0).toFixed(2)}`;
+    if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${total.toFixed(2)}`;
+    if (barDiscountEl) barDiscountEl.textContent = `-Ks ${(0).toFixed(2)}`;
     if (barDiscountRowEl) barDiscountRowEl.style.display = 'none';
-    if (barTotalEl) barTotalEl.textContent = `$${total.toFixed(2)}`;
-    if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • $${total.toFixed(2)}`;
+    if (barTotalEl) barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
+    if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${total.toFixed(2)}`;
     if (barCheckoutEl) barCheckoutEl.disabled = itemCount === 0;
 
     if (itemCount > 0 && typeof window.calculateCheckoutWithPromotions === 'function') {
@@ -341,64 +341,64 @@ function updateCart() {
                     window.currentCheckout = checkout;
                     const subtotal = Number.isFinite(subtotalRaw) ? subtotalRaw : total;
                     const finalTotal = Number.isFinite(totalRaw) ? totalRaw : total;
-                    if (barSubtotalEl) barSubtotalEl.textContent = `$${subtotal.toFixed(2)}`;
-                    if (barDiscountEl) barDiscountEl.textContent = `-$${discount.toFixed(2)}`;
+                    if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${subtotal.toFixed(2)}`;
+                    if (barDiscountEl) barDiscountEl.textContent = `-Ks ${discount.toFixed(2)}`;
                     if (barDiscountRowEl) barDiscountRowEl.style.display = hasPromo ? 'flex' : 'none';
-                    if (barTotalEl) barTotalEl.textContent = `$${finalTotal.toFixed(2)}`;
-                    if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • $${finalTotal.toFixed(2)}`;
+                    if (barTotalEl) barTotalEl.textContent = `Ks ${finalTotal.toFixed(2)}`;
+                    if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${finalTotal.toFixed(2)}`;
                     if (barSavingsEl) {
                         barSavingsEl.style.display = 'none';
                         barSavingsEl.textContent = '';
                     }
                     if (pendingSchedule && barTotalEl) {
-                        barTotalEl.textContent = `$${finalTotal.toFixed(2)}`;
+                        barTotalEl.textContent = `Ks ${finalTotal.toFixed(2)}`;
                     }
                     return;
                 }
 
                 window.currentCheckout = null;
-                if (barSubtotalEl) barSubtotalEl.textContent = `$${total.toFixed(2)}`;
-                if (barDiscountEl) barDiscountEl.textContent = `-$${(0).toFixed(2)}`;
+                if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${total.toFixed(2)}`;
+                if (barDiscountEl) barDiscountEl.textContent = `-Ks ${(0).toFixed(2)}`;
                 if (barDiscountRowEl) barDiscountRowEl.style.display = 'none';
-                if (barTotalEl) barTotalEl.textContent = `$${total.toFixed(2)}`;
-                if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • $${total.toFixed(2)}`;
+                if (barTotalEl) barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
+                if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${total.toFixed(2)}`;
                 if (barSavingsEl) {
                     barSavingsEl.style.display = 'none';
                     barSavingsEl.textContent = '';
                 }
                 if (pendingSchedule && barTotalEl) {
-                    barTotalEl.textContent = `$${total.toFixed(2)}`;
+                    barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
                 }
             })
             .catch(() => {
-                if (barSubtotalEl) barSubtotalEl.textContent = `$${total.toFixed(2)}`;
-                if (barDiscountEl) barDiscountEl.textContent = `-$${(0).toFixed(2)}`;
+                if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${total.toFixed(2)}`;
+                if (barDiscountEl) barDiscountEl.textContent = `-Ks ${(0).toFixed(2)}`;
                 if (barDiscountRowEl) barDiscountRowEl.style.display = 'none';
-                if (barTotalEl) barTotalEl.textContent = `$${total.toFixed(2)}`;
-                if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • $${total.toFixed(2)}`;
+                if (barTotalEl) barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
+                if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${total.toFixed(2)}`;
                 if (barSavingsEl) {
                     barSavingsEl.style.display = 'none';
                     barSavingsEl.innerHTML = '';
                 }
                 if (pendingSchedule && barTotalEl) {
                     const when = `${pendingSchedule.date} ${pendingSchedule.time}`;
-                    barTotalEl.textContent = `$${total.toFixed(2)}`;
+                    barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
                 }
             });
     } else {
         window.currentCheckout = null;
-        if (barSubtotalEl) barSubtotalEl.textContent = `$${total.toFixed(2)}`;
-        if (barDiscountEl) barDiscountEl.textContent = `-$${(0).toFixed(2)}`;
+        if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${total.toFixed(2)}`;
+        if (barDiscountEl) barDiscountEl.textContent = `-Ks ${(0).toFixed(2)}`;
         if (barDiscountRowEl) barDiscountRowEl.style.display = 'none';
-        if (barTotalEl) barTotalEl.textContent = `$${total.toFixed(2)}`;
-        if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • $${total.toFixed(2)}`;
+        if (barTotalEl) barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
+        if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${total.toFixed(2)}`;
         if (barSavingsEl) {
             barSavingsEl.style.display = 'none';
             barSavingsEl.innerHTML = '';
         }
         if (pendingSchedule && barTotalEl) {
             const when = `${pendingSchedule.date} ${pendingSchedule.time}`;
-            barTotalEl.textContent = `$${total.toFixed(2)}`;
+            barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
         }
     }
     
