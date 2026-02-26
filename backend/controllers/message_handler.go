@@ -10,7 +10,8 @@ import (
 func handleMessage(userID, messageText string) {
 	// Chat-based ordering has been removed
 	// Only webview form ordering is supported
-	SendMessage(userID, "Hi! 👋\n\nTo place an order, tap the 'Order' button in the menu above (☰ > Order).\n\nYou can also browse our products with the 'Products' button.")
+	// Send intro message with webview button instead of plain text
+	ShowWebviewOrderForm(userID)
 }
 
 func confirmMessengerVerification(userID string) bool {

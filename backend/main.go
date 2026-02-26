@@ -40,7 +40,8 @@ func main() {
 	log.Println("⚙️  Setting up Facebook Messenger features...")
 	controllers.SetupPersistentMenu()
 	controllers.SetupGetStartedButton()
-	controllers.SetupGreetingText()
+	// Note: SetupGreetingText() disabled as Facebook's newer API requires additional parameters
+	// controllers.SetupGreetingText()
 	log.Println("✅ Facebook Messenger setup complete")
 
 	// Start background stock cleanup job (releases expired reservations)
