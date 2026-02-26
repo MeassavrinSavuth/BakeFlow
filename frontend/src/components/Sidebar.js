@@ -25,10 +25,7 @@ export default function Sidebar({ open, toggle }) {
     { href: '/admin/orders', icon: 'receipt', key: 'orders' },
     { href: '/admin/payments', icon: 'cash-coin', key: 'payments' },
     { href: '/admin/products', icon: 'box-seam', key: 'products' },
-    { href: '/admin/promotions', icon: 'tag', key: 'promotions' },
-    { href: '/admin/customers', icon: 'people', key: 'customers' },
-    { href: '/admin/analytics', icon: 'graph-up', key: 'analytics' },
-    { href: '/admin/settings', icon: 'gear', key: 'settings' }
+    { href: '/admin/promotions', icon: 'tag', key: 'promotions' }
   ];
 
 

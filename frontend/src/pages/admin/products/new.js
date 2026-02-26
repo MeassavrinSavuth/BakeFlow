@@ -384,9 +384,7 @@ export default function NewProductPage() {
                         <label className="form-label fw-semibold">Status</label>
                         <select className="form-select" value={status} onChange={(e)=>setStatus(e.target.value)}>
                           <option value="active">Active (Published)</option>
-                          <option value="draft">Draft</option>
-                          <option value="inactive">Inactive</option>
-                          <option value="archived">Archived</option>
+                          <option value="archived">Hidden</option>
                         </select>
                       </div>
                       <button className="btn btn-primary w-100" onClick={(e)=>handleSubmit(e)} disabled={uploading || creating}>

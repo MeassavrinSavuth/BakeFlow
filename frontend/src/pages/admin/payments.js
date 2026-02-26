@@ -12,6 +12,11 @@ export default function AdminPayments() {
     const [confirmPaymentId, setConfirmPaymentId] = useState(null);
     const [confirmOrderId, setConfirmOrderId] = useState(null);
     const [isVerifying, setIsVerifying] = useState(false);
+    const formatMoney = (value) => {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return '—';
+        return `$${num.toFixed(2)}`;
+    };
 
     useEffect(() => {
         fetchPayments();
@@ -142,9 +147,13 @@ export default function AdminPayments() {
                                                     <span>Order #{payment.order_id}</span>
                                                     <small className="text-muted text-sm">{new Date(payment.created_at).toLocaleDateString()}</small>
                                                 </h5>
-                                                <p className="card-text text-muted mb-3">
+                                                <p className="card-text text-muted mb-2">
                                                     User ID: {payment.user_id}
                                                 </p>
+                                                <div className="d-flex justify-content-between align-items-center mb-3">
+                                                    <span className="text-muted">Total</span>
+                                                    <span className="fw-semibold">{formatMoney(payment.amount)}</span>
+                                                </div>
 
                                                 {filter === 'pending' && (
                                                     <div className="d-flex gap-2 mt-3">

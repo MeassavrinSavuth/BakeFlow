@@ -373,7 +373,11 @@
         cancelled: { label: 'Cancelled', emoji: '⚪', text: 'This order was cancelled.' },
         canceled: { label: 'Cancelled', emoji: '⚪', text: 'This order was cancelled.' }
       };
-      const statusInfo = statusMap[statusValue] || statusMap.confirmed;
+      const isDelivery = String(d.delivery_type || '').toLowerCase() === 'delivery';
+      let statusInfo = statusMap[statusValue] || statusMap.confirmed;
+      if (!isDelivery && (statusValue === 'delivered' || statusValue === 'completed')) {
+        statusInfo = { label: 'Picked up', emoji: '🧳', text: 'Your order has been picked up.' };
+      }
       const badgeEl = document.getElementById('statusBadge');
       if (badgeEl) badgeEl.textContent = `${statusInfo.emoji} ${statusInfo.label}`;
       const statusTextEl = document.getElementById('statusText');
@@ -402,7 +406,6 @@
         delivered: 4,
         completed: 4
       };
-      const isDelivery = String(d.delivery_type || '').toLowerCase() === 'delivery';
       const firstLabel = statusValue === 'scheduled' ? 'Scheduled' : 'Pending';
       const steps = isDelivery ? [
         { key: 'pending', label: firstLabel },

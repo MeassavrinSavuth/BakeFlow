@@ -565,12 +565,15 @@ export default function OrdersPage() {
     XLSX.writeFile(workbook, fileName);
   }, [API_BASE]);
 
-  const getStatusSteps = (currentStatus) => {
+  const getStatusSteps = (currentStatus, deliveryType) => {
+    const isDelivery = String(deliveryType || '').toLowerCase() === 'delivery';
+    const finalLabel = isDelivery ? t('delivered') : t('pickedUp');
+    const finalIcon = isDelivery ? 'truck' : 'bag-check';
     const steps = [
       { key: 'pending', label: t('pending'), icon: 'hourglass-split' },
       { key: 'preparing', label: t('preparing'), icon: 'egg-fried' },
       { key: 'ready', label: t('ready'), icon: 'check-circle' },
-      { key: 'delivered', label: t('delivered'), icon: 'truck' }
+      { key: 'delivered', label: finalLabel, icon: finalIcon }
     ];
     const normalized = (currentStatus === 'scheduled' || currentStatus === 'confirmed') ? 'pending' : currentStatus;
     const currentIndex = steps.findIndex(s => s.key === normalized);
@@ -581,12 +584,18 @@ export default function OrdersPage() {
     }));
   };
 
-  const getNextAction = (status) => {
+  const getNextAction = (status, deliveryType) => {
+    const isDelivery = String(deliveryType || '').toLowerCase() === 'delivery';
     const normalized = (status === 'scheduled' || status === 'confirmed') ? 'pending' : status;
     const actions = {
       pending: { label: t('startPreparing'), nextStatus: 'preparing', icon: 'egg-fried', color: 'primary' },
       preparing: { label: t('markAsReady'), nextStatus: 'ready', icon: 'check-circle', color: 'info' },
-      ready: { label: t('markAsDelivered'), nextStatus: 'delivered', icon: 'truck', color: 'success' }
+      ready: {
+        label: isDelivery ? t('markAsDelivered') : t('markAsPickedUp'),
+        nextStatus: 'delivered',
+        icon: isDelivery ? 'truck' : 'bag-check',
+        color: 'success'
+      }
     };
     return actions[normalized];
   };
@@ -739,10 +748,14 @@ export default function OrdersPage() {
                     </div>
                     {group.orders.map(entry => {
                       const order = entry.order;
-                      const nextAction = getNextAction(order.status);
-                      const statusSteps = getStatusSteps(order.status);
+                      const nextAction = getNextAction(order.status, order.delivery_type);
+                      const statusSteps = getStatusSteps(order.status, order.delivery_type);
                       const scheduledFor = order.scheduled_for ? new Date(order.scheduled_for) : null;
                       const isScheduled = order.status === 'scheduled' || (scheduledFor && !Number.isNaN(scheduledFor.getTime()) && scheduledFor.getTime() > now);
+                      const isDelivery = String(order.delivery_type || '').toLowerCase() === 'delivery';
+                      const statusLabel = isScheduled
+                        ? 'SCHEDULED'
+                        : (order.status === 'delivered' && !isDelivery ? 'PICKED UP' : String(order.status || '').toUpperCase());
                       const subtotal = Number(order.subtotal) || 0;
                       const deliveryFee = Number(order.delivery_fee) || 0;
                       const totalAmountRaw = Number(order.total_amount);
@@ -799,7 +812,7 @@ export default function OrdersPage() {
                                 <div className="d-flex align-items-start flex-wrap justify-content-end gap-2">
                                   <span className={`badge bg-${statusColor(order.status)} px-3 py-2`}>
                                     {isScheduled && <i className="bi bi-calendar-event me-1" />}
-                                    {isScheduled ? 'SCHEDULED' : order.status.toUpperCase()}
+                                    {statusLabel}
                                     {updating === order.id && <span className="ms-2 spinner-border spinner-border-sm" />}
                                   </span>
                                   {hasItemUpdate && (

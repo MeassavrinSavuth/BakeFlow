@@ -93,12 +93,14 @@ export default function ProductFormPage() {
       const res = await fetch(`${API_BASE}/api/products/${id}`);
       const data = await res.json();
       if (data.product) {
+        const rawPrice = data.product.price;
+        const rawStock = data.product.stock;
         setForm({
           name: data.product.name || '',
           description: data.product.description || '',
           category: data.product.category || 'Cakes',
-          price: data.product.price || '',
-          stock: data.product.stock || '',
+          price: (rawPrice === 0 || rawPrice) ? String(rawPrice) : '',
+          stock: (rawStock === 0 || rawStock) ? String(rawStock) : '',
           image_url: data.product.image_url || '',
           status: data.product.status || 'draft'
         });
@@ -253,9 +255,9 @@ export default function ProductFormPage() {
       [listKey]: (prev[listKey] || []).filter((v) => normalizeOption(v) !== target),
       ...(listKey === 'sizes' || listKey === 'layers' || listKey === 'creams'
         ? {
-            [listKey === 'sizes' ? 'size_prices' : listKey === 'layers' ? 'layer_prices' : 'cream_prices']:
-              Object.fromEntries(Object.entries(prev[listKey === 'sizes' ? 'size_prices' : listKey === 'layers' ? 'layer_prices' : 'cream_prices'] || {}).filter(([k]) => normalizeOption(k) !== target))
-          }
+          [listKey === 'sizes' ? 'size_prices' : listKey === 'layers' ? 'layer_prices' : 'cream_prices']:
+            Object.fromEntries(Object.entries(prev[listKey === 'sizes' ? 'size_prices' : listKey === 'layers' ? 'layer_prices' : 'cream_prices'] || {}).filter(([k]) => normalizeOption(k) !== target))
+        }
         : {})
     }));
   };
@@ -324,13 +326,13 @@ export default function ProductFormPage() {
 
   const validate = () => {
     const newErrors = {};
-    
+
     if (!form.name.trim()) newErrors.name = 'Product name is required';
     if (form.name.length > 255) newErrors.name = 'Name must be less than 255 characters';
     if (!form.category) newErrors.category = 'Category is required';
     if (!form.price || parseFloat(form.price) < 0) newErrors.price = 'Valid price is required';
     if (!form.stock || parseInt(form.stock) < 0) newErrors.stock = 'Valid stock quantity is required';
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -343,10 +345,10 @@ export default function ProductFormPage() {
 
     setSaving(true);
     try {
-      const url = isEdit 
+      const url = isEdit
         ? `${API_BASE}/api/products/${id}`
         : `${API_BASE}/api/products`;
-      
+
       const method = isEdit ? 'PUT' : 'POST';
 
       let imageUrl = form.image_url || '';
@@ -368,7 +370,9 @@ export default function ProductFormPage() {
         }
         setUploading(false);
       }
-      
+
+      const priceValue = Number(form.price);
+      const stockValue = Number.parseInt(String(form.stock), 10);
       const res = await fetch(url, {
         method,
         headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -378,14 +382,34 @@ export default function ProductFormPage() {
           tags: Array.from(
             new Set([...tagsList, ...parseTagsFromText(tagsInput)].map((t) => normalizeTag(t)).filter(Boolean))
           ).slice(0, 20),
-          price: parseFloat(form.price),
-          stock: parseInt(form.stock)
+          price: Number.isFinite(priceValue) ? priceValue : 0,
+          stock: Number.isFinite(stockValue) ? stockValue : 0
         })
       });
-      
+
       const data = await res.json();
-      
+
       if (data.success) {
+        if (typeof window !== 'undefined') {
+          try {
+            const cacheKey = 'bf_admin_products_cache';
+            const cached = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+            if (Array.isArray(cached) && cached.length) {
+              const next = cached.map((p) => {
+                if (Number(p?.id) !== Number(id)) return p;
+                return {
+                  ...p,
+                  ...data.product,
+                  status: data.product?.status || form.status || p.status,
+                  price: (data.product?.price === 0 || data.product?.price) ? data.product.price : p.price,
+                  stock: (data.product?.stock === 0 || data.product?.stock) ? data.product.stock : p.stock,
+                };
+              });
+              localStorage.setItem(cacheKey, JSON.stringify(next));
+            }
+          } catch {
+          }
+        }
         if (!silent) {
           showNotification(
             isEdit ? 'Product updated successfully' : 'Product created successfully',
@@ -452,16 +476,16 @@ export default function ProductFormPage() {
   return (
     <>
       <Head>
-        <title>{isEdit ? 'Edit Product' : 'Add New Product'} - BakeFlow Admin</title>
+        <title>{`${isEdit ? 'Edit Product' : 'Add New Product'} - BakeFlow Admin`}</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
         <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet" />
       </Head>
 
       <div className="d-flex vh-100 overflow-hidden bg-light">
         <Sidebar open={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} />
-        
+
         <div className="flex-grow-1 d-flex flex-column overflow-hidden">
-          <TopNavbar 
+          <TopNavbar
             toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
             notifications={notifications}
             unreadCount={unreadCount}
@@ -473,12 +497,12 @@ export default function ProductFormPage() {
 
           <div className="flex-grow-1 overflow-auto">
             <div className="container-fluid px-4 py-4">
-              
+
               {/* Notification Toast */}
               {notification.show && (
-                <div className={`alert alert-${notification.type} alert-dismissible fade show position-fixed top-0 end-0 m-4`} style={{zIndex: 9999}} role="alert">
+                <div className={`alert alert-${notification.type} alert-dismissible fade show position-fixed top-0 end-0 m-4`} style={{ zIndex: 9999 }} role="alert">
                   <strong>{notification.message}</strong>
-                  <button type="button" className="btn-close" onClick={() => setNotification({show: false, message: '', type: ''})}></button>
+                  <button type="button" className="btn-close" onClick={() => setNotification({ show: false, message: '', type: '' })}></button>
                 </div>
               )}
 
@@ -517,7 +541,7 @@ export default function ProductFormPage() {
                               type="text"
                               className={`form-control ${errors.name ? 'is-invalid' : ''}`}
                               value={form.name}
-                              onChange={(e) => setForm({...form, name: e.target.value})}
+                              onChange={(e) => setForm({ ...form, name: e.target.value })}
                               placeholder="e.g., Chocolate Fudge Cake"
                             />
                             {errors.name && <div className="invalid-feedback">{errors.name}</div>}
@@ -530,7 +554,7 @@ export default function ProductFormPage() {
                               step="0.01"
                               className={`form-control ${errors.price ? 'is-invalid' : ''}`}
                               value={form.price}
-                              onChange={(e) => setForm({...form, price: e.target.value})}
+                              onChange={(e) => setForm({ ...form, price: e.target.value })}
                               placeholder="0.00"
                             />
                             {errors.price && <div className="invalid-feedback">{errors.price}</div>}
@@ -542,7 +566,7 @@ export default function ProductFormPage() {
                               type="number"
                               className={`form-control ${errors.stock ? 'is-invalid' : ''}`}
                               value={form.stock}
-                              onChange={(e) => setForm({...form, stock: e.target.value})}
+                              onChange={(e) => setForm({ ...form, stock: e.target.value })}
                               placeholder="0"
                             />
                             {errors.stock && <div className="invalid-feedback">{errors.stock}</div>}
@@ -589,7 +613,7 @@ export default function ProductFormPage() {
                               className="form-control"
                               rows="4"
                               value={form.description}
-                              onChange={(e) => setForm({...form, description: e.target.value})}
+                              onChange={(e) => setForm({ ...form, description: e.target.value })}
                               placeholder="Describe your product..."
                             ></textarea>
                           </div>
@@ -599,7 +623,7 @@ export default function ProductFormPage() {
                             <select
                               className={`form-select ${errors.category ? 'is-invalid' : ''}`}
                               value={form.category}
-                              onChange={(e) => setForm({...form, category: e.target.value})}
+                              onChange={(e) => setForm({ ...form, category: e.target.value })}
                             >
                               <option value="Cakes">Cakes</option>
                               <option value="Cupcakes">Cupcakes</option>
@@ -694,19 +718,6 @@ export default function ProductFormPage() {
                             </div>
                           </div>
 
-                          <div>
-                            <label className="form-label fw-semibold">Status</label>
-                            <select
-                              className="form-select"
-                              value={form.status}
-                              onChange={(e) => setForm({...form, status: e.target.value})}
-                            >
-                              <option value="draft">Draft</option>
-                              <option value="active">Active (Published)</option>
-                              <option value="inactive">Inactive</option>
-                              <option value="archived">Archived</option>
-                            </select>
-                          </div>
                         </div>
                       </div>
                     </div>

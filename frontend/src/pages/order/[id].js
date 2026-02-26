@@ -261,7 +261,14 @@ export default function OrderPage() {
                     </div>
                 </div>
 
-                <CustomerPaymentFlow order={order} />
+                {typeof window !== 'undefined' ? null : null}
+                {(() => {
+                    try {
+                        const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+                        const pay = params.get('pay');
+                        return pay === 'scan';
+                    } catch (e) { return true; }
+                })() && <CustomerPaymentFlow order={order} />}
             </div>
         </div>
     );

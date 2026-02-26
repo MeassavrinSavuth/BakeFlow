@@ -20,7 +20,6 @@ export default function ProductsPage() {
   const [notification, setNotification] = useState({ show: false, message: '', type: '' });
   const [stockStatus, setStockStatus] = useState({});
   const [preorderSettings, setPreorderSettings] = useState({ enabled: true, product_ids: [] });
-  const [preorderCategoryFilter, setPreorderCategoryFilter] = useState('all');
   const [preorderLoading, setPreorderLoading] = useState(true);
   const [preorderSaving, setPreorderSaving] = useState(false);
   const { notifications, unreadCount, hasUnread, markAsRead, markAllRead, clearAll } = useNotifications();
@@ -81,7 +80,7 @@ export default function ProductsPage() {
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem(PRODUCT_CACHE_KEY, JSON.stringify(nextProducts));
-        } catch {}
+        } catch { }
       }
       await fetchStockStatus(nextProducts.map(product => product.id));
       setError(null);
@@ -96,7 +95,7 @@ export default function ProductsPage() {
             fetchStockStatus(cached.map(product => product.id));
             usedCache = true;
           }
-        } catch {}
+        } catch { }
       }
       setError(usedCache ? null : 'Failed to load products');
     } finally {
@@ -112,7 +111,7 @@ export default function ProductsPage() {
         setProducts(cached);
         fetchStockStatus(cached.map(product => product.id));
       }
-    } catch {}
+    } catch { }
   }, [fetchStockStatus]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
@@ -133,7 +132,7 @@ export default function ProductsPage() {
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem(PREORDER_CACHE_KEY, JSON.stringify(nextSettings));
-        } catch {}
+        } catch { }
       }
     } catch {
       let usedCache = false;
@@ -147,7 +146,7 @@ export default function ProductsPage() {
             });
             usedCache = true;
           }
-        } catch {}
+        } catch { }
       }
       if (!usedCache) setPreorderSettings({ enabled: true, product_ids: [] });
     } finally {
@@ -165,7 +164,7 @@ export default function ProductsPage() {
           product_ids: Array.isArray(cached.product_ids) ? cached.product_ids : [],
         });
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => { fetchPreorderSettings(); }, [fetchPreorderSettings]);
@@ -175,19 +174,28 @@ export default function ProductsPage() {
     setTimeout(() => setNotification({ show: false, message: '', type: '' }), 5000);
   };
 
+  const [archiveModal, setArchiveModal] = useState({ show: false, id: null, name: '' });
+  const openArchiveModal = (id, name) => setArchiveModal({ show: true, id, name: name || '' });
+  const closeArchiveModal = () => setArchiveModal({ show: false, id: null, name: '' });
+
   const deleteProduct = async (id) => {
-    if (!confirm('Are you sure you want to archive this product?')) return;
     try {
-      const res = await fetch(`${API_BASE}/api/products/${id}`, {
-        method: 'DELETE',
-        headers: buildAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      const data = await res.json();
-      if (data.success) { showNotification('Product archived successfully', 'success'); fetchProducts(); }
-      else showNotification('Failed to archive product', 'danger');
+      // Try permanent delete first (admin endpoint). If not available, fall back to archive.
+      const permanentUrl = `${API_BASE}/api/admin/products/${id}/delete`;
+      const archiveUrl = `${API_BASE}/api/products/${id}`;
+      let res = await fetch(permanentUrl, { method: 'DELETE', headers: buildAuthHeaders() });
+      let data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        res = await fetch(archiveUrl, { method: 'DELETE', headers: buildAuthHeaders() });
+        data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(`API error ${res.status}`);
+        showNotification('Product archived successfully', 'success');
+      } else {
+        showNotification('Product deleted permanently', 'success');
+      }
+      fetchProducts();
     } catch {
-      showNotification('Error archiving product', 'danger');
+      showNotification('Error deleting product', 'danger');
     }
   };
 
@@ -248,18 +256,6 @@ export default function ProductsPage() {
     return preorderSelectableProducts.filter((product) => !preorderSelectedSet.has(product.id));
   }, [preorderSelectableProducts, preorderSelectedSet]);
 
-  const preorderCategoryOptions = ['all', 'cakes', 'cupcakes', 'muffins'];
-
-  const filteredAvailablePreorderProducts = useMemo(() => {
-    if (preorderCategoryFilter === 'all') return availablePreorderProducts;
-    return availablePreorderProducts.filter((product) => normalizeCategory(product.category) === preorderCategoryFilter);
-  }, [availablePreorderProducts, preorderCategoryFilter, normalizeCategory]);
-
-  const filteredSelectedPreorderProducts = useMemo(() => {
-    if (preorderCategoryFilter === 'all') return selectedPreorderProducts;
-    return selectedPreorderProducts.filter((product) => normalizeCategory(product.category) === preorderCategoryFilter);
-  }, [selectedPreorderProducts, preorderCategoryFilter, normalizeCategory]);
-
   const sanitizedPreorderSelection = useMemo(() => {
     return preorderSelectableProducts
       .filter((product) => preorderSelectedSet.has(product.id))
@@ -311,7 +307,7 @@ export default function ProductsPage() {
         if (typeof window !== 'undefined') {
           try {
             localStorage.setItem(PREORDER_CACHE_KEY, JSON.stringify(nextSettings));
-          } catch {}
+          } catch { }
         }
         showNotification('Preorder banner updated', 'success');
       } else {
@@ -401,14 +397,6 @@ export default function ProductsPage() {
                       >
                         Clear selection
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-primary"
-                        onClick={savePreorderSettings}
-                        disabled={preorderLoading || preorderSaving}
-                      >
-                        {preorderSaving ? 'Saving...' : 'Save banner'}
-                      </button>
                     </div>
                     <div className="form-check form-switch d-flex align-items-center gap-2">
                       <input
@@ -430,26 +418,10 @@ export default function ProductsPage() {
                       <div className="col-12 col-lg-6">
                         <div className="d-flex align-items-center justify-content-between mb-2">
                           <div className="fw-semibold">Available Products (Not in Preorder Yet)</div>
-                          <span className="badge bg-light text-muted border">{filteredAvailablePreorderProducts.length}</span>
-                        </div>
-                        <div className="d-flex align-items-center gap-2 mb-2">
-                          {preorderCategoryOptions.map((option) => {
-                            const active = preorderCategoryFilter === option;
-                            return (
-                              <button
-                                key={`preorder-filter-left-${option}`}
-                                type="button"
-                                className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}`}
-                                onClick={() => setPreorderCategoryFilter(option)}
-                                disabled={preorderLoading || preorderDisabled}
-                              >
-                                {option.charAt(0).toUpperCase() + option.slice(1)}
-                              </button>
-                            );
-                          })}
+                          <span className="badge bg-light text-muted border">{availablePreorderProducts.length}</span>
                         </div>
                         <div className="d-flex flex-column gap-2">
-                          {filteredAvailablePreorderProducts.map((product) => {
+                          {availablePreorderProducts.map((product) => {
                             const statusLabel = product.status === 'active' ? 'Active' : 'Inactive';
                             return (
                               <div className="border rounded-3 p-3 d-flex align-items-center gap-3 bg-white" key={`preorder-available-${product.id}`}>
@@ -483,7 +455,7 @@ export default function ProductsPage() {
                               </div>
                             );
                           })}
-                          {!filteredAvailablePreorderProducts.length && (
+                          {!availablePreorderProducts.length && (
                             <div className="text-muted small">All loaded products are already in preorder.</div>
                           )}
                         </div>
@@ -491,26 +463,10 @@ export default function ProductsPage() {
                       <div className="col-12 col-lg-6">
                         <div className="d-flex align-items-center justify-content-between mb-2">
                           <div className="fw-semibold text-success">Selected for Preorder</div>
-                          <span className="badge bg-success-subtle text-success border border-success-subtle">{filteredSelectedPreorderProducts.length}</span>
-                        </div>
-                        <div className="d-flex align-items-center gap-2 mb-2">
-                          {preorderCategoryOptions.map((option) => {
-                            const active = preorderCategoryFilter === option;
-                            return (
-                              <button
-                                key={`preorder-filter-right-${option}`}
-                                type="button"
-                                className={`btn btn-sm ${active ? 'btn-success' : 'btn-outline-secondary'}`}
-                                onClick={() => setPreorderCategoryFilter(option)}
-                                disabled={preorderLoading || preorderDisabled}
-                              >
-                                {option.charAt(0).toUpperCase() + option.slice(1)}
-                              </button>
-                            );
-                          })}
+                          <span className="badge bg-success-subtle text-success border border-success-subtle">{selectedPreorderProducts.length}</span>
                         </div>
                         <div className="d-flex flex-column gap-2">
-                          {filteredSelectedPreorderProducts.map((product) => {
+                          {selectedPreorderProducts.map((product) => {
                             const statusLabel = product.status === 'active' ? 'Active' : 'Inactive';
                             return (
                               <div className="border border-success border-2 rounded-3 p-3 d-flex align-items-center gap-3 bg-success-subtle" key={`preorder-selected-${product.id}`}>
@@ -548,7 +504,7 @@ export default function ProductsPage() {
                               </div>
                             );
                           })}
-                          {!filteredSelectedPreorderProducts.length && (
+                          {!selectedPreorderProducts.length && (
                             <div className="text-muted small">No products selected yet.</div>
                           )}
                         </div>
@@ -689,7 +645,6 @@ export default function ProductsPage() {
                             <th className="text-uppercase text-muted small fw-semibold py-3">{t('productColumn')}</th>
                             <th className="text-uppercase text-muted small fw-semibold py-3">{t('priceColumn')}</th>
                             <th className="text-uppercase text-muted small fw-semibold py-3">{t('stockColumn')}</th>
-                            <th className="text-uppercase text-muted small fw-semibold py-3">{t('performanceColumn')}</th>
                             <th className="text-uppercase text-muted small fw-semibold py-3">{t('statusColumn')}</th>
                             <th className="text-uppercase text-muted small fw-semibold text-end py-3">{t('actionsColumn')}</th>
                           </tr>
@@ -703,121 +658,114 @@ export default function ProductsPage() {
                             const isOutOfStock = info?.status === 'out_of_stock' || product.out_of_stock || product.availability_status === 'sold_out';
                             const isLowStock = info?.status === 'low_stock' || product.low_stock || product.availability_status === 'limited';
                             return (
-                            <tr key={product.id}>
-                              <td>
-                                <div className="d-flex align-items-center gap-3">
-                                  <div className="rounded-3 overflow-hidden bg-light" style={{ width: 64, height: 64 }}>
-                                    {product.image_url ? (
-                                      <Image src={product.image_url} alt={product.name} width={64} height={64} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                    ) : (
-                                      <div className="d-flex align-items-center justify-content-center h-100">
-                                        <i className="bi bi-image text-muted"></i>
+                              <tr key={product.id}>
+                                <td>
+                                  <div className="d-flex align-items-center gap-3">
+                                    <div className="rounded-3 overflow-hidden bg-light" style={{ width: 64, height: 64 }}>
+                                      {product.image_url ? (
+                                        <Image src={product.image_url} alt={product.name} width={64} height={64} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      ) : (
+                                        <div className="d-flex align-items-center justify-content-center h-100">
+                                          <i className="bi bi-image text-muted"></i>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <div className="fw-semibold mb-1 d-flex align-items-center gap-2">
+                                        {product.name}
+                                        <span className="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle">{product.category}</span>
                                       </div>
-                                    )}
-                                  </div>
-                                  <div>
-                                    <div className="fw-semibold mb-1 d-flex align-items-center gap-2">
-                                      {product.name}
-                                      <span className="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle">{product.category}</span>
-                                    </div>
-                                    <div className="text-muted small d-none d-md-block" style={{ maxWidth: 420 }}>
-                                      {product.description?.substring(0, 80)}{product.description && product.description.length > 80 ? '…' : ''}
+                                      <div className="text-muted small d-none d-md-block" style={{ maxWidth: 420 }}>
+                                        {product.description?.substring(0, 80)}{product.description && product.description.length > 80 ? '…' : ''}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              </td>
-                              <td className="fw-semibold">{formatCurrency(product.price)}</td>
-                              <td>
-                                <div className="d-flex flex-column">
-                                  <div className="d-flex align-items-center gap-2">
-                                    <button 
-                                      className="btn btn-outline-secondary btn-sm rounded-circle p-0" 
-                                      style={{ width: 24, height: 24, fontSize: 14 }}
-                                      onClick={() => adjustStock(product.id, -1)}
-                                      title="Decrease stock"
-                                    >
-                                      <i className="bi bi-dash"></i>
-                                    </button>
-                                    <span className="fw-semibold" style={{ minWidth: 30, textAlign: 'center' }}>{availableStock}</span>
-                                    <button 
-                                      className="btn btn-outline-secondary btn-sm rounded-circle p-0" 
-                                      style={{ width: 24, height: 24, fontSize: 14 }}
-                                      onClick={() => adjustStock(product.id, 1)}
-                                      title="Increase stock"
-                                    >
-                                      <i className="bi bi-plus"></i>
-                                    </button>
+                                </td>
+                                <td className="fw-semibold">{formatCurrency(product.price)}</td>
+                                <td>
+                                  <div className="d-flex flex-column">
+                                    <div className="d-flex align-items-center gap-2">
+                                      <button
+                                        className="btn btn-outline-secondary btn-sm rounded-circle p-0"
+                                        style={{ width: 24, height: 24, fontSize: 14 }}
+                                        onClick={() => adjustStock(product.id, -1)}
+                                        title="Decrease stock"
+                                      >
+                                        <i className="bi bi-dash"></i>
+                                      </button>
+                                      <span className="fw-semibold" style={{ minWidth: 30, textAlign: 'center' }}>{availableStock}</span>
+                                      <button
+                                        className="btn btn-outline-secondary btn-sm rounded-circle p-0"
+                                        style={{ width: 24, height: 24, fontSize: 14 }}
+                                        onClick={() => adjustStock(product.id, 1)}
+                                        title="Increase stock"
+                                      >
+                                        <i className="bi bi-plus"></i>
+                                      </button>
+                                    </div>
+                                    <span className="mt-2">
+                                      {isOutOfStock ? (
+                                        <span className="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-danger" style={{ width: 8, height: 8, opacity: .2 }}></span> {t('outOfStock')}</span>
+                                      ) : isLowStock ? (
+                                        <span className="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-warning" style={{ width: 8, height: 8, opacity: .2 }}></span> {t('lowStock')}</span>
+                                      ) : (
+                                        <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-success" style={{ width: 8, height: 8, opacity: .2 }}></span> {t('goodStock')}</span>
+                                      )}
+                                    </span>
+                                    <span className="text-muted small">
+                                      Available {availableStock} / {totalStock}{reservedStock > 0 ? ` • ${reservedStock} reserved` : ''}
+                                    </span>
+                                    {isLowStock && availableStock > 0 ? (
+                                      <span className="text-muted small">Only {availableStock} left</span>
+                                    ) : null}
                                   </div>
-                                  <span className="mt-2">
-                                    {isOutOfStock ? (
-                                      <span className="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-danger" style={{ width: 8, height: 8, opacity: .2 }}></span> {t('outOfStock')}</span>
-                                    ) : isLowStock ? (
-                                      <span className="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-warning" style={{ width: 8, height: 8, opacity: .2 }}></span> {t('lowStock')}</span>
+                                </td>
+                                <td>
+                                  <span className={`badge rounded-pill ${getStatusBadge(product.status)}`}>
+                                    {product.status === 'active' ? t('activeLabel') : product.status === 'draft' ? 'Draft' : t('hiddenLabel')}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="d-flex justify-content-end gap-2">
+                                    <Link href={`/admin/products/${product.id}`}>
+                                      <button className="btn btn-light btn-sm rounded-circle border" style={{ width: 36, height: 36 }} title={t('editTitle')} data-bs-toggle="tooltip">
+                                        <i className="bi bi-pencil"></i>
+                                      </button>
+                                    </Link>
+                                    {product.status === 'active' ? (
+                                      <button
+                                        className="btn btn-light btn-sm rounded-circle border text-warning"
+                                        style={{ width: 36, height: 36 }}
+                                        onClick={() => updateStatus(product.id, 'inactive')}
+                                        title={t('hideTitle')}
+                                        data-bs-toggle="tooltip"
+                                      >
+                                        <i className="bi bi-eye-slash"></i>
+                                      </button>
                                     ) : (
-                                      <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle d-inline-flex align-items-center gap-2"><span className="rounded-circle bg-success" style={{ width: 8, height: 8, opacity: .2 }}></span> {t('goodStock')}</span>
+                                      <button
+                                        className="btn btn-light btn-sm rounded-circle border text-warning"
+                                        style={{ width: 36, height: 36 }}
+                                        onClick={() => updateStatus(product.id, 'active')}
+                                        title={t('showTitle')}
+                                        data-bs-toggle="tooltip"
+                                      >
+                                        <i className="bi bi-eye"></i>
+                                      </button>
                                     )}
-                                  </span>
-                                  <span className="text-muted small">
-                                    Available {availableStock} / {totalStock}{reservedStock > 0 ? ` • ${reservedStock} reserved` : ''}
-                                  </span>
-                                  {isLowStock && availableStock > 0 ? (
-                                    <span className="text-muted small">Only {availableStock} left</span>
-                                  ) : null}
-                                </div>
-                              </td>
-                              <td>
-                                <div className="d-flex align-items-center gap-2">
-                                  <i className="bi bi-eye"></i>
-                                  <span className="fw-semibold">{product.views || 0}</span>
-                                  <span className="text-muted small">0% today</span>
-                                </div>
-                              </td>
-                              <td>
-                                <span className={`badge rounded-pill ${getStatusBadge(product.status)}`}>
-                                  {product.status === 'active' ? t('activeLabel') : product.status === 'draft' ? 'Draft' : t('hiddenLabel')}
-                                </span>
-                              </td>
-                              <td>
-                                <div className="d-flex justify-content-end gap-2">
-                                  <Link href={`/admin/products/${product.id}`}>
-                                    <button className="btn btn-light btn-sm rounded-circle border" style={{ width: 36, height: 36 }} title={t('editTitle')} data-bs-toggle="tooltip">
-                                      <i className="bi bi-pencil"></i>
-                                    </button>
-                                  </Link>
-                                  {product.status === 'active' ? (
                                     <button
-                                      className="btn btn-light btn-sm rounded-circle border text-warning"
+                                      className="btn btn-light btn-sm rounded-circle border text-danger"
                                       style={{ width: 36, height: 36 }}
-                                      onClick={() => updateStatus(product.id, 'inactive')}
-                                      title={t('hideTitle')}
+                                      onClick={() => openArchiveModal(product.id, product.name)}
+                                      title={t('deleteTitle')}
                                       data-bs-toggle="tooltip"
                                     >
-                                      <i className="bi bi-eye-slash"></i>
+                                      <i className="bi bi-trash"></i>
                                     </button>
-                                  ) : (
-                                    <button
-                                      className="btn btn-light btn-sm rounded-circle border text-warning"
-                                      style={{ width: 36, height: 36 }}
-                                      onClick={() => updateStatus(product.id, 'active')}
-                                      title={t('showTitle')}
-                                      data-bs-toggle="tooltip"
-                                    >
-                                      <i className="bi bi-eye"></i>
-                                    </button>
-                                  )}
-                                  <button
-                                    className="btn btn-light btn-sm rounded-circle border text-danger"
-                                    style={{ width: 36, height: 36 }}
-                                    onClick={() => deleteProduct(product.id)}
-                                    title={t('deleteTitle')}
-                                    data-bs-toggle="tooltip"
-                                  >
-                                    <i className="bi bi-trash"></i>
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
+                                  </div>
+                                </td>
+                              </tr>
+                            );
                           })}
                         </tbody>
                       </table>
@@ -828,6 +776,47 @@ export default function ProductsPage() {
             </div>
           </div>
         </div>
+        {archiveModal.show && (
+          <>
+            <div className="modal fade show" style={{ display: 'block' }} tabIndex="-1" role="dialog" aria-modal="true">
+              <div className="modal-dialog modal-dialog-centered">
+                <div className="modal-content border-0 shadow">
+                  <div className="modal-header border-0">
+                    <div className="d-flex align-items-center gap-2">
+                      <div className="rounded-circle bg-danger-subtle text-danger d-inline-flex align-items-center justify-content-center" style={{ width: 36, height: 36 }}>
+                        <i className="bi bi-trash3"></i>
+                      </div>
+                      <h5 className="modal-title fw-semibold">Delete product</h5>
+                    </div>
+                    <button type="button" className="btn-close" onClick={closeArchiveModal} aria-label="Close"></button>
+                  </div>
+                  <div className="modal-body">
+                    <div className="mb-2">
+                      <div className="fw-semibold">{archiveModal.name || 'This product'}</div>
+                    </div>
+                    <div className="text-muted">
+                      This action cannot be undone. The product will be removed permanently.
+                    </div>
+                  </div>
+                  <div className="modal-footer border-0">
+                    <button type="button" className="btn btn-outline-secondary" onClick={closeArchiveModal}>Cancel</button>
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      onClick={async () => {
+                        await deleteProduct(archiveModal.id);
+                        closeArchiveModal();
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="modal-backdrop fade show"></div>
+          </>
+        )}
       </div>
     </>
   );

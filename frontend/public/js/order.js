@@ -394,22 +394,32 @@ async function submitOrder() {
             return;
         }
 
-        // Stock validated, proceed with order
+        // Stock validated, ask payment method then proceed
         if (submitBtn) {
             submitBtn.innerHTML = '<span class="spinner"></span> Placing order...';
         }
-        processOrderSubmission(name, phone, address, notes, deliveryType, userId, tok, items);
+        (async () => {
+            const method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+            if (!method) { resetSubmitButton(); return; }
+            window.__preferredPayMethod = method;
+            processOrderSubmission(name, phone, address, notes, deliveryType, userId, tok, items, method);
+        })();
     }).catch(err => {
         console.error('Stock validation error:', err);
         // Proceed anyway on network failure (fail-open)
         if (submitBtn) {
             submitBtn.innerHTML = '<span class="spinner"></span> Placing order...';
         }
-        processOrderSubmission(name, phone, address, notes, deliveryType, userId, tok, items);
+        (async () => {
+            const method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+            if (!method) { resetSubmitButton(); return; }
+            window.__preferredPayMethod = method;
+            processOrderSubmission(name, phone, address, notes, deliveryType, userId, tok, items, method);
+        })();
     });
 }
 
-function processOrderSubmission(name, phone, address, notes, deliveryType, userId, tok, items) {
+function processOrderSubmission(name, phone, address, notes, deliveryType, userId, tok, items, paymentMethod) {
 
     // Combine all item notes into a formatted string for the order notes
     const itemNotesText = items
@@ -531,7 +541,7 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
                         address: deliveryType === 'delivery' ? address : 'Pickup at store',
                         notes: combinedNotes,
                         delivery_type: deliveryType === 'pickup' ? 'Pick Up' : 'Delivery',
-                        payment_status: 'Pay on delivery',
+                        payment_status: paymentMethod === 'scan' ? 'Scan to pay' : 'Pay by cash',
                         subtotal: window.currentCheckout?.subtotal ?? data.subtotal ?? null,
                         discount: window.currentCheckout?.discount ?? data.discount ?? null,
                         delivery_fee: window.currentCheckout?.delivery_fee ?? data.delivery_fee ?? null,
@@ -549,7 +559,8 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
                     console.log('Failed to store invoice', e);
                 }
 
-                window.location.href = `/order/${data.order_id}`;
+                const payParam = (paymentMethod || window.__preferredPayMethod) === 'scan' ? 'scan' : 'cash';
+                window.location.href = `/order/${data.order_id}?pay=${encodeURIComponent(payParam)}`;
             } else {
                 // Handle specific errors (like insufficient stock)
                 if (data && data.error === 'insufficient_stock') {
@@ -567,6 +578,49 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
             showError('Network error. Please try again.');
             resetSubmitButton();
         });
+}
+
+// Payment method chooser (inline modal)
+function choosePaymentMethodInline() {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.inset = '0';
+        overlay.style.background = 'rgba(0,0,0,0.25)';
+        overlay.style.backdropFilter = 'blur(2px)';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.zIndex = '9999';
+        const dialog = document.createElement('div');
+        dialog.style.background = '#fff';
+        dialog.style.borderRadius = '16px';
+        dialog.style.boxShadow = '0 12px 40px rgba(0,0,0,0.15)';
+        dialog.style.width = 'min(92vw, 420px)';
+        dialog.style.padding = '20px';
+        dialog.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                <div style="width:36px;height:36px;border-radius:10px;background:#FFF4EA;display:flex;align-items:center;justify-content:center;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D8A35D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                </div>
+                <div>
+                    <div style="font-size:16px;font-weight:700;color:#1f2937">Choose Payment</div>
+                    <div style="font-size:12px;color:#6b7280">Pay by Cash or Scan to pay</div>
+                </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
+                <button id="payScanBtn" style="padding:12px;border:1px solid #e6ded4;border-radius:12px;background:#f8f5f0;font-weight:700;cursor:pointer;">Scan to Pay</button>
+                <button id="payCashBtn" style="padding:12px;border:1px solid #e6ded4;border-radius:12px;background:#fff;font-weight:700;cursor:pointer;">Pay by Cash</button>
+                <button id="cancelPayBtn" style="padding:10px;border:none;border-radius:12px;background:#f3f4f6;color:#6b7280;font-weight:600;cursor:pointer;">Cancel</button>
+            </div>
+        `;
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        const cleanup = () => { try { document.body.removeChild(overlay); } catch(e){} };
+        dialog.querySelector('#payScanBtn').addEventListener('click', () => { cleanup(); resolve('scan'); });
+        dialog.querySelector('#payCashBtn').addEventListener('click', () => { cleanup(); resolve('cash'); });
+        dialog.querySelector('#cancelPayBtn').addEventListener('click', () => { cleanup(); resolve(null); });
+    });
 }
 
 function resetSubmitButton() {
@@ -1227,7 +1281,7 @@ function sendCustomOrderChoice(choice, existingOrderID, orderData, name, phone) 
         .then(data => {
             console.log('📥 Custom choice response:', data);
             if (data.success) {
-                completeOrderSubmission(data, name, phone, orderData);
+                completeOrderSubmission(data, name, phone, orderData, window.__preferredPayMethod);
             } else {
                 showError(data.message || 'Failed to process order');
                 resetPreorderSubmitButton();
@@ -1495,7 +1549,7 @@ function sendOrderChoice(choice, existingOrderID, orderData, name, phone) {
         });
 }
 
-function completeOrderSubmission(data, name, phone, orderData) {
+function completeOrderSubmission(data, name, phone, orderData, paymentMethod) {
     const orderId = data.orderID || data.order_id;
     const orderMsg = data.action === 'items_merged'
         ? `Items added to order #${orderId}!`
@@ -1515,7 +1569,7 @@ function completeOrderSubmission(data, name, phone, orderData) {
             customer_phone: phone || '',
             address: deliveryType === 'pickup' ? 'Pickup at store' : address,
             delivery_type: deliveryType === 'pickup' ? 'Pick Up' : 'Delivery',
-            payment_status: 'Pay on delivery',
+            payment_status: paymentMethod === 'scan' ? 'Scan to pay' : 'Pay by cash',
             subtotal: data.subtotal ?? null,
             discount: data.discount ?? null,
             delivery_fee: data.delivery_fee ?? null,
@@ -1533,5 +1587,6 @@ function completeOrderSubmission(data, name, phone, orderData) {
         console.log('Failed to store invoice', e);
     }
 
-    window.location.href = `/order/${orderId}`;
+    const payParam = (paymentMethod || window.__preferredPayMethod) === 'scan' ? 'scan' : 'cash';
+    window.location.href = `/order/${orderId}?pay=${encodeURIComponent(payParam)}`;
 }

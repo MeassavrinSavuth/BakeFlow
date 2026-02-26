@@ -4,24 +4,46 @@ import Image from 'next/image';
 
 export default function PopularItems({ items, loading }) {
   const { t } = useTranslation();
-  const [products, setProducts] = useState({});
+  const [products, setProducts] = useState(() => {
+    try {
+      const cached = localStorage.getItem('bf_admin_products_cache');
+      const arr = cached ? JSON.parse(cached) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  });
   const apiBase = process.env.NEXT_PUBLIC_API_BASE || 'https://bakeflow.onrender.com';
   
   // Fetch product details to get images
   useEffect(() => {
-    if (items && items.length > 0) {
-      fetch(`${apiBase}/api/products`)
-        .then(res => res.json())
-        .then(data => {
-          const productMap = {};
-          (data.products || []).forEach(p => {
-            productMap[p.name] = p;
-          });
-          setProducts(productMap);
-        })
-        .catch(err => console.error('Failed to load products:', err));
-    }
+    if (!items || items.length === 0) return;
+    if (Array.isArray(products) && products.length > 0) return;
+    fetch(`${apiBase}/api/products`)
+      .then(res => res.json())
+      .then(data => {
+        setProducts(Array.isArray(data.products) ? data.products : []);
+      })
+      .catch(err => console.error('Failed to load products:', err));
   }, [apiBase, items]);
+
+  const getProductForItem = (item) => {
+    const id = item.product_id;
+    if (id) {
+      const byId = products.find(p => p.id === id);
+      if (byId) return byId;
+    }
+    const name = item.name;
+    if (!name) return null;
+    const target = String(name).trim().toLowerCase();
+    const exact = products.find(p => String(p.name || '').trim().toLowerCase() === target);
+    if (exact) return exact;
+    const contains = products.find(p => {
+      const pn = String(p.name || '').trim().toLowerCase();
+      return pn.includes(target) || target.includes(pn);
+    });
+    return contains || null;
+  };
   
   return (
     <div className="card border-0 shadow-sm mb-4">
@@ -32,8 +54,8 @@ export default function PopularItems({ items, loading }) {
           <div className="row g-3">
             {items.length === 0 && <div className="col-12 text-muted">{t('noItemDataYet')}</div>}
             {items.map(item => {
-              const product = products[item.name];
-              const imageUrl = product?.image_url || 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=300&fit=crop';
+              const product = getProductForItem(item);
+              const imageUrl = item?.image_url || product?.image_url || 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=300&fit=crop';
               
               return (
                 <div key={item.name} className="col-6 col-md-3">

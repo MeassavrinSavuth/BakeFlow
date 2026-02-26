@@ -5,7 +5,7 @@ import Sidebar from '../../components/Sidebar';
 import TopNavbar from '../../components/TopNavbar';
 import SummaryCards from '../../components/SummaryCards';
 import RecentOrdersTable from '../../components/RecentOrdersTable';
-import PopularItems from '../../components/PopularItems';
+import Image from 'next/image';
 import SalesChart from '../../components/SalesChart';
 import NotificationPreviewCard from '../../components/NotificationPreviewCard';
 import { useTranslation } from '../../utils/i18n';
@@ -148,17 +148,79 @@ export default function AdminDashboard() {
     }; 
   }, [orders]);
 
-  const popularItems = useMemo(() => {
-    const counts = {};
-    orders.forEach(o => (o.items || []).forEach(it => {
-      counts[it.product] = (counts[it.product] || 0) + it.quantity;
-    }));
-    return Object.entries(counts)
-      .sort((a,b) => b[1]-a[1])
-      .slice(0,5)
-      .map(([name,count]) => ({ name, count }));
+  const soldCounts = useMemo(() => {
+    const map = new Map();
+    orders.forEach(o => {
+      if (String(o.status).toLowerCase() !== 'delivered') return;
+      (o.items || []).forEach(it => {
+        const key = it.product_id || `name:${String(it.product || '').trim().toLowerCase()}`;
+        const qty = Number(it.quantity || 0) || 0;
+        map.set(key, (map.get(key) || 0) + qty);
+      });
+    });
+    return map;
   }, [orders]);
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const fetchProducts = useCallback(async () => {
+    try {
+      let hadCache = false;
+      try {
+        const cached = JSON.parse(localStorage.getItem('bf_admin_products_cache') || '[]');
+        if (Array.isArray(cached) && cached.length) {
+          setProducts(cached);
+          setProductsLoading(false);
+          hadCache = true;
+        }
+      } catch {}
+      if (!hadCache) setProductsLoading(true);
+      const res = await fetch(`${API_BASE}/api/products`);
+      const data = await res.json();
+      setProducts(Array.isArray(data.products) ? data.products : []);
+      try {
+        localStorage.setItem('bf_admin_products_cache', JSON.stringify(Array.isArray(data.products) ? data.products : []));
+      } catch {}
+    } catch {
+      setProducts([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  }, [API_BASE]);
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
+  const [salesItems, setSalesItems] = useState([]);
+  useEffect(() => {
+    const fetchSales = async () => {
+      try {
+        let hadCache = false;
+        try {
+          const cached = JSON.parse(localStorage.getItem('bf_admin_product_sales_cache') || '[]');
+          if (Array.isArray(cached) && cached.length) {
+            setSalesItems(cached);
+            hadCache = true;
+          }
+        } catch {}
+        const res = await fetch(`${API_BASE}/api/admin/product-sales?limit=16`, { headers: buildAuthHeaders() });
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.items)) {
+          setSalesItems(data.items);
+          try {
+            localStorage.setItem('bf_admin_product_sales_cache', JSON.stringify(data.items));
+          } catch {}
+        } else {
+          if (!hadCache) setSalesItems([]);
+        }
+      } catch {
+        try {
+          const cached = JSON.parse(localStorage.getItem('bf_admin_product_sales_cache') || '[]');
+          setSalesItems(Array.isArray(cached) ? cached : []);
+        } catch {
+          setSalesItems([]);
+        }
+      }
+    };
+    fetchSales();
+  }, [API_BASE, buildAuthHeaders]);
   const dailySales = useMemo(() => {
     const map = {};
     orders.forEach(o => {
@@ -219,7 +281,48 @@ export default function AdminDashboard() {
               <div id="recent-orders">
                 <RecentOrdersTable orders={orders} loading={loading} error={error} />
               </div>
-              <PopularItems items={popularItems} loading={loading} />
+              <div className="card border-0 shadow-sm mb-4">
+                <div className="card-body">
+                  <h5 className="card-title mb-3"><i className="bi bi-box-seam me-2 text-primary"/>{t('productsTitle')}</h5>
+                  {productsLoading && <div className="row g-3">{[1,2,3,4,5,6,7,8].map(i => <div key={i} className="col-6 col-md-3"><div className="card h-100 skeleton" /></div>)}</div>}
+                  {!productsLoading && products.length === 0 && <div className="text-muted">{t('noProductsYet')}</div>}
+                  {!productsLoading && products.length > 0 && (
+                    <div className="row g-3">
+                      {products.slice(0,8).map(p => {
+                        const img = p.image_url || 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=300&fit=crop';
+                        const byId = salesItems.find(it => it.product_id === p.id)?.sold;
+                        const byName = salesItems.find(it => String(it.name || '').trim().toLowerCase() === String(p.name || '').trim().toLowerCase())?.sold;
+                        const byDelivered = soldCounts.get(p.id) ?? soldCounts.get(`name:${String(p.name || '').trim().toLowerCase()}`);
+                        const totalSold = (byId ?? byName ?? byDelivered ?? 0);
+                        return (
+                          <div key={p.id} className="col-6 col-md-3">
+                            <div className="card h-100 border-0 shadow-sm">
+                              <div className="ratio ratio-1x1 rounded-top overflow-hidden">
+                                <Image
+                                  src={img}
+                                  alt={p.name}
+                                  fill
+                                  sizes="(max-width: 768px) 50vw, 25vw"
+                                  style={{ objectFit: 'cover' }}
+                                />
+                              </div>
+                              <div className="card-body d-flex flex-column gap-2">
+                                <div className="d-flex align-items-center justify-content-between">
+                                  <div className="fw-semibold">{p.name}</div>
+                                  <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle">{p.category}</span>
+                                </div>
+                                <div className="d-flex align-items-center justify-content-end text-muted small">
+                                  <span className="badge bg-accent text-dark border">{totalSold} sold</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
               <SalesChart data={dailySales} loading={loading} />
               {!loading && (
                 <div className="mt-2 text-muted small">Revenue (last 7 days total): {formatCurrency(dailySales.reduce((s,d)=>s+d.total,0))}</div>

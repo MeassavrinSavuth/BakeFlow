@@ -215,18 +215,40 @@ func GetAllOrders() ([]Order, error) {
 
 		// Build query with IN clause
 		itemsQuery := `
-			SELECT id, order_id, product, quantity, price, 
-			       COALESCE(note, '') as note, COALESCE(image_url, '') as image_url, created_at 
-			FROM order_items 
-			WHERE order_id = ANY($1)
-			ORDER BY order_id, id
+			SELECT 
+				oi.id, oi.order_id, COALESCE(p.id, 0) as product_id, oi.product, oi.quantity, oi.price,
+				COALESCE(oi.note, '') as note,
+				COALESCE(p.image_url, oi.image_url, '') as image_url,
+				oi.created_at
+			FROM order_items oi
+			LEFT JOIN LATERAL (
+				SELECT pr.id, pr.image_url
+				FROM products pr
+				WHERE pr.deleted_at IS NULL
+				  AND (
+					LOWER(pr.name) = LOWER(oi.product)
+					OR LOWER(pr.name) LIKE '%' || LOWER(oi.product) || '%'
+					OR LOWER(oi.product) LIKE '%' || LOWER(pr.name) || '%'
+				  )
+				ORDER BY 
+				  CASE WHEN LOWER(pr.name) = LOWER(oi.product) THEN 0 ELSE 1 END,
+				  ABS(LENGTH(pr.name) - LENGTH(oi.product))
+				LIMIT 1
+			) p ON TRUE
+			WHERE oi.order_id = ANY($1)
+			ORDER BY oi.order_id, oi.id
 		`
 		itemRows, err := configs.DB.Query(itemsQuery, pq.Array(orderIDs))
 		if err == nil {
 			defer itemRows.Close()
 			for itemRows.Next() {
 				var item OrderItem
-				if err := itemRows.Scan(&item.ID, &item.OrderID, &item.Product, &item.Quantity, &item.Price, &item.Note, &item.ImageURL, &item.CreatedAt); err == nil {
+				var pid sql.NullInt64
+				if err := itemRows.Scan(&item.ID, &item.OrderID, &pid, &item.Product, &item.Quantity, &item.Price, &item.Note, &item.ImageURL, &item.CreatedAt); err == nil {
+					if pid.Valid && pid.Int64 > 0 {
+						v := int(pid.Int64)
+						item.ProductID = &v
+					}
 					if idx, ok := orderMap[item.OrderID]; ok {
 						orders[idx].Items = append(orders[idx].Items, item)
 					}
@@ -381,18 +403,40 @@ func GetOrdersByStatus(status string) ([]Order, error) {
 			orderMap[o.ID] = i
 		}
 		itemsQuery := `
-			SELECT id, order_id, product, quantity, price, 
-			       COALESCE(note, '') as note, COALESCE(image_url, '') as image_url, created_at 
-			FROM order_items 
-			WHERE order_id = ANY($1)
-			ORDER BY order_id, id
+			SELECT 
+				oi.id, oi.order_id, COALESCE(p.id, 0) as product_id, oi.product, oi.quantity, oi.price,
+				COALESCE(oi.note, '') as note,
+				COALESCE(p.image_url, oi.image_url, '') as image_url,
+				oi.created_at
+			FROM order_items oi
+			LEFT JOIN LATERAL (
+				SELECT pr.id, pr.image_url
+				FROM products pr
+				WHERE pr.deleted_at IS NULL
+				  AND (
+					LOWER(pr.name) = LOWER(oi.product)
+					OR LOWER(pr.name) LIKE '%' || LOWER(oi.product) || '%'
+					OR LOWER(oi.product) LIKE '%' || LOWER(pr.name) || '%'
+				  )
+				ORDER BY 
+				  CASE WHEN LOWER(pr.name) = LOWER(oi.product) THEN 0 ELSE 1 END,
+				  ABS(LENGTH(pr.name) - LENGTH(oi.product))
+				LIMIT 1
+			) p ON TRUE
+			WHERE oi.order_id = ANY($1)
+			ORDER BY oi.order_id, oi.id
 		`
 		itemRows, err := configs.DB.Query(itemsQuery, pq.Array(orderIDs))
 		if err == nil {
 			defer itemRows.Close()
 			for itemRows.Next() {
 				var item OrderItem
-				if err := itemRows.Scan(&item.ID, &item.OrderID, &item.Product, &item.Quantity, &item.Price, &item.Note, &item.ImageURL, &item.CreatedAt); err == nil {
+				var pid sql.NullInt64
+				if err := itemRows.Scan(&item.ID, &item.OrderID, &pid, &item.Product, &item.Quantity, &item.Price, &item.Note, &item.ImageURL, &item.CreatedAt); err == nil {
+					if pid.Valid && pid.Int64 > 0 {
+						v := int(pid.Int64)
+						item.ProductID = &v
+					}
 					if idx, ok := orderMap[item.OrderID]; ok {
 						orders[idx].Items = append(orders[idx].Items, item)
 					}

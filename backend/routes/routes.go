@@ -149,6 +149,7 @@ func SetupRoutes() http.Handler {
 	router.HandleFunc("/api/products/{id:[0-9]+}", productController.GetProduct).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/products/{id:[0-9]+}", productController.UpdateProduct).Methods("PUT", "OPTIONS")
 	router.HandleFunc("/api/products/{id:[0-9]+}", productController.DeleteProduct).Methods("DELETE", "OPTIONS")
+	router.Handle("/api/admin/products/{id:[0-9]+}/delete", controllers.RequireAdmin(http.HandlerFunc(productController.DeleteProductPermanent))).Methods("DELETE", "OPTIONS")
 
 	// Product Status (numeric id)
 	router.HandleFunc("/api/products/{id:[0-9]+}/status", productController.UpdateProductStatus).Methods("PATCH", "OPTIONS")
@@ -158,6 +159,11 @@ func SetupRoutes() http.Handler {
 
 	// Product Logs
 	router.HandleFunc("/api/products/{id}/logs", productController.GetProductLogs).Methods("GET", "OPTIONS")
+
+	// Admin Top Products (for dashboard popular items)
+	router.Handle("/api/admin/top-products", controllers.RequireAdmin(http.HandlerFunc(productController.AdminGetTopProducts))).Methods("GET", "OPTIONS")
+	// Admin Product Sales (aggregated sold counts)
+	router.Handle("/api/admin/product-sales", controllers.RequireAdmin(http.HandlerFunc(productController.AdminGetProductSales))).Methods("GET", "OPTIONS")
 
 	// Product Alerts
 	router.HandleFunc("/api/products/low-stock", productController.GetLowStockProducts).Methods("GET", "OPTIONS")

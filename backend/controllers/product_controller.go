@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"bakeflow/models"
 
@@ -643,6 +644,40 @@ func (pc *ProductController) DeleteProduct(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (pc *ProductController) DeleteProductPermanent(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid product ID", err)
+		return
+	}
+
+	var exists bool
+	err = pc.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM products WHERE id = $1)", id).Scan(&exists)
+	if err != nil || !exists {
+		respondWithError(w, http.StatusNotFound, "Product not found", nil)
+		return
+	}
+
+	_, err = pc.DB.Exec("DELETE FROM products WHERE id = $1", id)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to permanently delete product", err)
+		return
+	}
+
+	adminID := getAdminIDFromContext(r)
+	changes := map[string]interface{}{
+		"action":     "permanently_deleted",
+		"product_id": id,
+	}
+	go models.CreateLogEntry(pc.DB, id, adminID, "DELETE_PERMANENT", changes)
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Product deleted permanently",
+	})
+}
+
 // GetProductLogs handles GET /api/products/:id/logs - get product change history
 func (pc *ProductController) GetProductLogs(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -698,6 +733,66 @@ func (pc *ProductController) GetProductLogs(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// AdminGetTopProducts returns top-N active products by purchases for dashboard popular items
+func (pc *ProductController) AdminGetTopProducts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	limit := 5
+	offset := 0
+	if l := strings.TrimSpace(r.URL.Query().Get("limit")); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 50 {
+			limit = v
+		}
+	}
+	if o := strings.TrimSpace(r.URL.Query().Get("offset")); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	query := `
+		SELECT p.id, p.name, COALESCE(pa.purchases, 0) as purchases, COALESCE(p.image_url, '') as image_url
+		FROM products p
+		LEFT JOIN product_analytics pa ON pa.product_id = p.id
+		WHERE p.deleted_at IS NULL AND p.status = 'active'
+		ORDER BY purchases DESC, pa.views DESC NULLS LAST, p.id ASC
+		LIMIT $1 OFFSET $2
+	`
+
+	rows, err := pc.DB.Query(query, limit, offset)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch top products", err)
+		return
+	}
+	defer rows.Close()
+
+	items := []map[string]interface{}{}
+	for rows.Next() {
+		var id, purchases int
+		var name, imageURL string
+		if err := rows.Scan(&id, &name, &purchases, &imageURL); err != nil {
+			continue
+		}
+		items = append(items, map[string]interface{}{
+			"product_id": id,
+			"name":       name,
+			"count":      purchases,
+			"image_url":  imageURL,
+		})
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"items": items,
+		"count": len(items),
+	})
+}
+
 // GetLowStockProducts handles GET /api/products/low-stock - get products with low stock
 func (pc *ProductController) GetLowStockProducts(w http.ResponseWriter, r *http.Request) {
 	threshold := 10
@@ -741,6 +836,94 @@ func (pc *ProductController) GetLowStockProducts(w http.ResponseWriter, r *http.
 		"products":  products,
 		"count":     len(products),
 		"threshold": threshold,
+	})
+}
+
+// AdminGetProductSales returns aggregated sold counts from delivered orders
+// Optional query params:
+// - days: limit to last N days (int)
+// - limit, offset: pagination
+func (pc *ProductController) AdminGetProductSales(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	limit := 8
+	offset := 0
+	days := 0
+	if l := strings.TrimSpace(r.URL.Query().Get("limit")); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+	if o := strings.TrimSpace(r.URL.Query().Get("offset")); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+	if d := strings.TrimSpace(r.URL.Query().Get("days")); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			days = v
+		}
+	}
+
+	baseQuery := `
+		SELECT 
+			COALESCE(p.id, 0) AS product_id,
+			COALESCE(p.name, oi.product) AS name,
+			COALESCE(p.image_url, '') AS image_url,
+			SUM(oi.quantity) AS sold
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		LEFT JOIN products p ON LOWER(p.name) = LOWER(oi.product) AND p.deleted_at IS NULL
+		WHERE LOWER(o.status) = 'delivered'
+	`
+	args := []interface{}{}
+	argIdx := 1
+	if days > 0 {
+		baseQuery += " AND o.created_at >= $1"
+		// Compute since timestamp
+		since := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+		args = append(args, since)
+		argIdx++
+	}
+	baseQuery += `
+		GROUP BY product_id, name, image_url
+		ORDER BY sold DESC, name ASC
+	`
+	baseQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIdx, argIdx+1)
+	args = append(args, limit, offset)
+
+	rows, err := pc.DB.Query(baseQuery, args...)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to compute product sales", err)
+		return
+	}
+	defer rows.Close()
+
+	items := []map[string]interface{}{}
+	for rows.Next() {
+		var productID int
+		var name, imageURL string
+		var sold int
+		if err := rows.Scan(&productID, &name, &imageURL, &sold); err != nil {
+			continue
+		}
+		items = append(items, map[string]interface{}{
+			"product_id": productID,
+			"name":       name,
+			"image_url":  imageURL,
+			"sold":       sold,
+		})
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"items": items,
+		"count": len(items),
 	})
 }
 
