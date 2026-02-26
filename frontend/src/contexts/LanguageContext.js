@@ -2,33 +2,38 @@ import { createContext, useState, useEffect } from 'react'
 
 export const LanguageContext = createContext({
   lang: 'en',
-  setLang: () => {},
+  setLang: () => { },
 })
 
 const STORAGE_KEY = 'bf_ui_lang'
 
 export function LanguageProvider({ children }) {
-  const [lang, setLang] = useState(() => {
-    if (typeof window === 'undefined') return 'en'
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored === 'en' || stored === 'my') return stored
-    } catch (e) {
-      // ignore (SSR safety)
-    }
-    return 'en'
-  })
+  const [lang, setLang] = useState('en')
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored === 'en' || stored === 'my') {
+        setLang(stored)
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
     try {
       localStorage.setItem(STORAGE_KEY, lang)
     } catch (e) {
       // ignore
     }
-  }, [lang])
+  }, [lang, mounted])
 
   return (
-    <LanguageContext.Provider value={{ lang, setLang }}>
+    <LanguageContext.Provider value={{ lang, setLang, mounted }}>
       {children}
     </LanguageContext.Provider>
   )

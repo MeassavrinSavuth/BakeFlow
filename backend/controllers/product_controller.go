@@ -92,20 +92,22 @@ func (pc *ProductController) GetProducts(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Sorting
-	validSortFields := map[string]bool{
-		"name": true, "price": true, "stock": true,
-		"created_at": true, "views": true, "purchases": true,
+	validSortFields := map[string]string{
+		"name":       "p.name",
+		"price":      "p.price",
+		"stock":      "p.stock",
+		"created_at": "p.created_at",
+		"views":      "views",     // Alias in SELECT
+		"purchases":  "purchases", // Alias in SELECT
 	}
-	if sortBy == "" {
-		sortBy = "created_at"
-	}
-	if !validSortFields[sortBy] {
-		sortBy = "created_at"
+	sortField := validSortFields[sortBy]
+	if sortField == "" {
+		sortField = "p.created_at"
 	}
 	if sortDir != "ASC" && sortDir != "DESC" {
 		sortDir = "DESC"
 	}
-	query += fmt.Sprintf(" ORDER BY %s %s", sortBy, sortDir)
+	query += fmt.Sprintf(" ORDER BY %s %s", sortField, sortDir)
 
 	// Pagination
 	limit := 50

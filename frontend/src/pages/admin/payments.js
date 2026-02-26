@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Sidebar from '../../components/Sidebar';
+import { useTranslation } from '../../utils/i18n';
+import { formatDate } from '../../utils/formatDate';
+import { toMyanmarNumber } from '../../utils/formatCurrency';
 
 export default function AdminPayments() {
+    const { t, lang, mounted } = useTranslation();
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [payments, setPayments] = useState([]);
     const [filter, setFilter] = useState('pending'); // pending, verified, rejected
@@ -14,8 +18,10 @@ export default function AdminPayments() {
     const [isVerifying, setIsVerifying] = useState(false);
 
     useEffect(() => {
-        fetchPayments();
-    }, [filter]);
+        if (mounted) {
+            fetchPayments();
+        }
+    }, [filter, mounted]);
 
     const fetchPayments = async () => {
         setLoading(true);
@@ -59,19 +65,26 @@ export default function AdminPayments() {
                 fetchPayments();
                 closeConfirm();
             } else {
-                alert("Failed to update status");
+                alert(t('failedToUpdate'));
             }
         } catch (error) {
-            alert("Error updating status");
+            alert(t('errorUpdating'));
         } finally {
             setIsVerifying(false);
         }
     };
 
+    const translateStatus = (status) => {
+        const key = status?.toLowerCase();
+        return t(key) !== key ? t(key) : status;
+    };
+
+    if (!mounted) return null;
+
     return (
         <div className="d-flex min-h-screen bg-gray-50">
             <Head>
-                <title>Payment Verification - Admin</title>
+                <title>{t('paymentVerification')} - Admin</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
                 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet" />
@@ -83,9 +96,9 @@ export default function AdminPayments() {
             <main className="flex-grow-1 p-4" style={{ marginLeft: sidebarOpen ? '0' : '0' }}>
                 <div className="container-fluid">
                     <div className="d-flex justify-content-between align-items-center mb-4">
-                        <h1 className="h3 text-gray-800">Payment Verification</h1>
+                        <h1 className="h3 text-gray-800">{t('paymentVerification')}</h1>
                         <button className="btn btn-primary" onClick={fetchPayments}>
-                            <i className="bi bi-arrow-clockwise me-2"></i>Refresh
+                            <i className="bi bi-arrow-clockwise me-2"></i>{t('refresh')}
                         </button>
                     </div>
 
@@ -97,19 +110,19 @@ export default function AdminPayments() {
                                 className={`btn ${filter === status ? 'btn-primary' : 'btn-outline-primary'}`}
                                 onClick={() => setFilter(status)}
                             >
-                                {status.charAt(0).toUpperCase() + status.slice(1)}
+                                {translateStatus(status)}
                             </button>
                         ))}
                     </div>
 
                     {/* Payments List */}
                     {loading ? (
-                        <div className="text-center py-5">Loading...</div>
+                        <div className="text-center py-5">{t('loadingOrders')}</div>
                     ) : (
                         <div className="row g-4">
                             {payments.length === 0 ? (
                                 <div className="col-12 text-center text-gray-500 py-5">
-                                    No {filter} payments found.
+                                    {t('noPaymentsFound').replace('{filter}', translateStatus(filter))}
                                 </div>
                             ) : (
                                 payments.map(payment => (
@@ -126,24 +139,24 @@ export default function AdminPayments() {
                                                     </a>
                                                 ) : (
                                                     <div className="d-flex align-items-center justify-content-center h-100 text-muted">
-                                                        No Image
+                                                        {t('noImage')}
                                                     </div>
                                                 )}
                                                 <div className="position-absolute top-0 end-0 m-2">
                                                     <span className={`badge ${payment.status === 'verified' ? 'bg-success' :
                                                         payment.status === 'rejected' ? 'bg-danger' : 'bg-warning text-dark'
                                                         }`}>
-                                                        {payment.status}
+                                                        {translateStatus(payment.status)}
                                                     </span>
                                                 </div>
                                             </div>
                                             <div className="card-body">
                                                 <h5 className="card-title d-flex justify-content-between">
-                                                    <span>Order #{payment.order_id}</span>
-                                                    <small className="text-muted text-sm">{new Date(payment.created_at).toLocaleDateString()}</small>
+                                                    <span>{t('orderHash')}{lang === 'my' ? toMyanmarNumber(payment.order_id) : payment.order_id}</span>
+                                                    <small className="text-muted text-sm">{formatDate(payment.created_at, lang)}</small>
                                                 </h5>
                                                 <p className="card-text text-muted mb-3">
-                                                    User ID: {payment.user_id}
+                                                    {t('userID')}: {lang === 'my' ? toMyanmarNumber(payment.user_id) : payment.user_id}
                                                 </p>
 
                                                 {filter === 'pending' && (
@@ -152,13 +165,13 @@ export default function AdminPayments() {
                                                             className="btn btn-success flex-grow-1"
                                                             onClick={() => openConfirm(payment.id, payment.order_id, 'verified')}
                                                         >
-                                                            <i className="bi bi-check-circle me-1"></i> Approve
+                                                            <i className="bi bi-check-circle me-1"></i> {t('approve')}
                                                         </button>
                                                         <button
                                                             className="btn btn-outline-danger flex-grow-1"
                                                             onClick={() => openConfirm(payment.id, payment.order_id, 'rejected')}
                                                         >
-                                                            <i className="bi bi-x-circle me-1"></i> Reject
+                                                            <i className="bi bi-x-circle me-1"></i> {t('reject')}
                                                         </button>
                                                     </div>
                                                 )}
@@ -175,20 +188,20 @@ export default function AdminPayments() {
                 <div className="modal-dialog modal-dialog-centered" role="document">
                     <div className="modal-content">
                         <div className="modal-header">
-                            <h5 className="modal-title">Confirm Payment Update</h5>
+                            <h5 className="modal-title">{t('confirmPaymentUpdate')}</h5>
                             <button type="button" className="btn-close" onClick={closeConfirm} aria-label="Close" disabled={isVerifying}></button>
                         </div>
                         <div className="modal-body">
                             {confirmOrderId ? (
-                                <span>Mark Order #{confirmOrderId} as {confirmStatus}?</span>
+                                <span>{t('markOrderAs').replace('{id}', lang === 'my' ? toMyanmarNumber(confirmOrderId) : confirmOrderId).replace('{status}', translateStatus(confirmStatus))}</span>
                             ) : (
-                                <span>Mark this payment as {confirmStatus}?</span>
+                                <span>{t('markPaymentAs').replace('{status}', translateStatus(confirmStatus))}</span>
                             )}
                         </div>
                         <div className="modal-footer">
-                            <button type="button" className="btn btn-outline-secondary" onClick={closeConfirm} disabled={isVerifying}>Cancel</button>
+                            <button type="button" className="btn btn-outline-secondary" onClick={closeConfirm} disabled={isVerifying}>{t('cancel')}</button>
                             <button type="button" className={`btn ${confirmStatus === 'verified' ? 'btn-success' : 'btn-danger'}`} onClick={handleVerify} disabled={isVerifying}>
-                                {isVerifying ? 'Updating...' : 'Confirm'}
+                                {isVerifying ? t('updating') : t('confirm')}
                             </button>
                         </div>
                     </div>

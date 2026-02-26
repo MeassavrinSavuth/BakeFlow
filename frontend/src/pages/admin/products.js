@@ -184,10 +184,10 @@ export default function ProductsPage() {
       });
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
-      if (data.success) { showNotification('Product archived successfully', 'success'); fetchProducts(); }
-      else showNotification('Failed to archive product', 'danger');
+      if (data.success) { showNotification(t('archiveSuccess'), 'success'); fetchProducts(); }
+      else showNotification(t('failedToArchive'), 'danger');
     } catch {
-      showNotification('Error archiving product', 'danger');
+      showNotification(t('errorUpdating'), 'danger');
     }
   };
 
@@ -200,10 +200,13 @@ export default function ProductsPage() {
       });
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
-      if (data.success) { showNotification(`Product ${newStatus === 'active' ? 'published' : 'updated'}`, 'success'); fetchProducts(); }
-      else showNotification('Failed to update status', 'danger');
+      if (data.success) { 
+        showNotification(newStatus === 'active' ? t('productPublished') : t('productUpdated'), 'success'); 
+        fetchProducts(); 
+      }
+      else showNotification(t('failedToUpdate'), 'danger');
     } catch {
-      showNotification('Error updating status', 'danger');
+      showNotification(t('errorUpdating'), 'danger');
     }
   };
 
@@ -217,13 +220,13 @@ export default function ProductsPage() {
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
       if (data.success) {
-        showNotification(`Stock: ${data.old_stock} → ${data.new_stock}`, 'success');
+        showNotification(`${t('stockColumn')}: ${data.old_stock} → ${data.new_stock}`, 'success');
         fetchProducts();
       } else {
-        showNotification('Failed to update stock', 'danger');
+        showNotification(t('failedToUpdate'), 'danger');
       }
     } catch {
-      showNotification('Error updating stock', 'danger');
+      showNotification(t('errorUpdating'), 'danger');
     }
   };
 
@@ -313,12 +316,12 @@ export default function ProductsPage() {
             localStorage.setItem(PREORDER_CACHE_KEY, JSON.stringify(nextSettings));
           } catch {}
         }
-        showNotification('Preorder banner updated', 'success');
+        showNotification(t('productUpdated'), 'success');
       } else {
-        showNotification(data.error || 'Failed to update preorder banner', 'danger');
+        showNotification(data.error || t('failedToUpdate'), 'danger');
       }
     } catch {
-      showNotification('Error updating preorder banner', 'danger');
+      showNotification(t('errorUpdating'), 'danger');
     } finally {
       setPreorderSaving(false);
     }
@@ -380,8 +383,8 @@ export default function ProductsPage() {
               <div className="card shadow-sm mb-4">
                 <div className="card-body">
                   <div className="mb-3">
-                    <h5 className="mb-1 fw-semibold">Preorder Display on Customer Page</h5>
-                    <div className="text-muted small">Select which products will be shown for preorder to customers.</div>
+                    <h5 className="mb-1 fw-semibold">{t('preorderTitle')}</h5>
+                    <div className="text-muted small">{t('preorderSubtitle')}</div>
                   </div>
                   <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
                     <div className="d-flex flex-wrap align-items-center gap-2">
@@ -391,7 +394,7 @@ export default function ProductsPage() {
                         onClick={selectAllPreorder}
                         disabled={preorderLoading || products.length === 0 || preorderDisabled}
                       >
-                        Select all loaded
+                        {t('selectAllLoaded')}
                       </button>
                       <button
                         type="button"
@@ -399,7 +402,7 @@ export default function ProductsPage() {
                         onClick={clearPreorderSelection}
                         disabled={preorderLoading || preorderSettings.product_ids.length === 0 || preorderDisabled}
                       >
-                        Clear selection
+                        {t('clearSelection')}
                       </button>
                       <button
                         type="button"
@@ -407,7 +410,7 @@ export default function ProductsPage() {
                         onClick={savePreorderSettings}
                         disabled={preorderLoading || preorderSaving}
                       >
-                        {preorderSaving ? 'Saving...' : 'Save banner'}
+                        {preorderSaving ? t('updating') : t('saveBanner')}
                       </button>
                     </div>
                     <div className="form-check form-switch d-flex align-items-center gap-2">
@@ -419,7 +422,7 @@ export default function ProductsPage() {
                         onChange={(e) => setPreorderSettings((prev) => ({ ...prev, enabled: e.target.checked }))}
                         disabled={preorderLoading}
                       />
-                      <label className="form-check-label fw-semibold" htmlFor="preorderEnabledToggle">Enable Preorder Display</label>
+                      <label className="form-check-label fw-semibold" htmlFor="preorderEnabledToggle">{t('enablePreorderDisplay')}</label>
                     </div>
                   </div>
                   <div className="position-relative">
@@ -429,7 +432,7 @@ export default function ProductsPage() {
                     <div className={`row g-3 ${preorderDisabled ? 'opacity-50' : ''}`}>
                       <div className="col-12 col-lg-6">
                         <div className="d-flex align-items-center justify-content-between mb-2">
-                          <div className="fw-semibold">Available Products (Not in Preorder Yet)</div>
+                          <div className="fw-semibold">{t('availableProductsLabel')}</div>
                           <span className="badge bg-light text-muted border">{filteredAvailablePreorderProducts.length}</span>
                         </div>
                         <div className="d-flex align-items-center gap-2 mb-2">
@@ -443,21 +446,21 @@ export default function ProductsPage() {
                                 onClick={() => setPreorderCategoryFilter(option)}
                                 disabled={preorderLoading || preorderDisabled}
                               >
-                                {option.charAt(0).toUpperCase() + option.slice(1)}
+                                {t(option === 'all' ? 'all' : option.toLowerCase()) || (option.charAt(0).toUpperCase() + option.slice(1))}
                               </button>
                             );
                           })}
                         </div>
                         <div className="d-flex flex-column gap-2">
                           {filteredAvailablePreorderProducts.map((product) => {
-                            const statusLabel = product.status === 'active' ? 'Active' : 'Inactive';
+                            const statusLabel = product.status === 'active' ? t('activeLabel') : product.status === 'draft' ? t('draftLabel') : t('inactive');
                             return (
                               <div className="border rounded-3 p-3 d-flex align-items-center gap-3 bg-white" key={`preorder-available-${product.id}`}>
                                 <input
                                   type="checkbox"
                                   className="form-check-input mt-0"
                                   style={{ width: 24, height: 24 }}
-                                  checked={false}
+                                  checked={preorderSelectedSet.has(product.id)}
                                   onChange={() => togglePreorderProduct(product.id)}
                                   disabled={preorderLoading || preorderDisabled}
                                 />
@@ -484,13 +487,13 @@ export default function ProductsPage() {
                             );
                           })}
                           {!filteredAvailablePreorderProducts.length && (
-                            <div className="text-muted small">All loaded products are already in preorder.</div>
+                            <div className="text-muted small">{t('allProductsInPreorder')}</div>
                           )}
                         </div>
                       </div>
                       <div className="col-12 col-lg-6">
                         <div className="d-flex align-items-center justify-content-between mb-2">
-                          <div className="fw-semibold text-success">Selected for Preorder</div>
+                          <div className="fw-semibold text-success">{t('selectedForPreorder')}</div>
                           <span className="badge bg-success-subtle text-success border border-success-subtle">{filteredSelectedPreorderProducts.length}</span>
                         </div>
                         <div className="d-flex align-items-center gap-2 mb-2">
@@ -504,21 +507,21 @@ export default function ProductsPage() {
                                 onClick={() => setPreorderCategoryFilter(option)}
                                 disabled={preorderLoading || preorderDisabled}
                               >
-                                {option.charAt(0).toUpperCase() + option.slice(1)}
+                                {t(option === 'all' ? 'all' : option.toLowerCase()) || (option.charAt(0).toUpperCase() + option.slice(1))}
                               </button>
                             );
                           })}
                         </div>
                         <div className="d-flex flex-column gap-2">
                           {filteredSelectedPreorderProducts.map((product) => {
-                            const statusLabel = product.status === 'active' ? 'Active' : 'Inactive';
+                            const statusLabel = product.status === 'active' ? t('activeLabel') : product.status === 'draft' ? t('draftLabel') : t('inactive');
                             return (
                               <div className="border border-success border-2 rounded-3 p-3 d-flex align-items-center gap-3 bg-success-subtle" key={`preorder-selected-${product.id}`}>
                                 <input
                                   type="checkbox"
                                   className="form-check-input mt-0"
                                   style={{ width: 24, height: 24 }}
-                                  checked
+                                  checked={preorderSelectedSet.has(product.id)}
                                   onChange={() => togglePreorderProduct(product.id)}
                                   disabled={preorderLoading || preorderDisabled}
                                 />
@@ -539,7 +542,7 @@ export default function ProductsPage() {
                                   <div className="text-muted small d-flex align-items-center gap-2">
                                     <span className="badge rounded-pill bg-success text-white d-inline-flex align-items-center gap-1">
                                       <i className="bi bi-calendar-event"></i>
-                                      IN PREORDER
+                                      {t('inPreorder')}
                                     </span>
                                     <span className={`badge rounded-pill ${getStatusBadge(product.status)}`}>{statusLabel}</span>
                                     <span>{formatCurrency(product.price || 0)}</span>
@@ -549,7 +552,7 @@ export default function ProductsPage() {
                             );
                           })}
                           {!filteredSelectedPreorderProducts.length && (
-                            <div className="text-muted small">No products selected yet.</div>
+                            <div className="text-muted small">{t('noProductsSelected')}</div>
                           )}
                         </div>
                       </div>
@@ -562,7 +565,7 @@ export default function ProductsPage() {
                       onClick={savePreorderSettings}
                       disabled={preorderLoading || preorderSaving}
                     >
-                      {preorderSaving ? 'Saving...' : 'Save Preorder Selection'}
+                      {preorderSaving ? t('updating') : t('savePreorderSelection')}
                     </button>
                   </div>
                 </div>
@@ -571,15 +574,15 @@ export default function ProductsPage() {
               {/* Page Header */}
               <div className="d-flex align-items-center justify-content-between mb-4">
                 <div>
-                  <h1 className="h3 mb-1 fw-semibold">Products</h1>
-                  <p className="text-muted mb-0 small">Manage your catalog, visibility, and inventory levels</p>
+                  <h1 className="h3 mb-1 fw-semibold">{t('productsTitle')}</h1>
+                  <p className="text-muted mb-0 small">{t('productInventory')}</p>
                 </div>
                 <div className="d-flex align-items-center gap-2">
                   <button className="btn btn-outline-secondary d-none d-md-inline-flex">
-                    <i className="bi bi-download me-2"></i>Export CSV
+                    <i className="bi bi-download me-2"></i>{t('exportCSV')}
                   </button>
                   <Link href="/admin/products/new">
-                    <button className="btn btn-primary"><i className="bi bi-plus-lg me-2"></i>Add Product</button>
+                    <button className="btn btn-primary"><i className="bi bi-plus-lg me-2"></i>{t('addProduct')}</button>
                   </Link>
                 </div>
               </div>

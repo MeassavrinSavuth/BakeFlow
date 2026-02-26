@@ -29,7 +29,7 @@ export default function AdminDashboard() {
     return headers;
   }, []);
 
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -86,7 +86,7 @@ export default function AdminDashboard() {
       } else {
         const incoming = data.orders || [];
         setOrders(incoming);
-        
+
         // Detect new orders (after initial load) and push to notifications
         if (initializedRef.current) {
           const newOnes = [];
@@ -95,11 +95,11 @@ export default function AdminDashboard() {
               const items = Array.isArray(o.items) ? o.items : [];
               const first = items[0] || null;
               const cake = first ? `${first.product}${items.length > 1 ? ` + ${items.length - 1} more` : ''}` : `${o.total_items || 0} item(s)`;
-              newOnes.push({ 
-                id: o.id, 
-                customer: o.customer_name || 'Customer', 
-                cake, 
-                time: new Date(o.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+              newOnes.push({
+                id: o.id,
+                customer: o.customer_name || 'Customer',
+                cake,
+                time: new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 timestamp: Date.now(),
                 isRead: false
               });
@@ -117,7 +117,7 @@ export default function AdminDashboard() {
         // Update seen set and save to localStorage
         const allOrderIds = incoming.map(o => o.id);
         updateSeenOrders(allOrderIds);
-        
+
         if (!initializedRef.current) {
           initializedRef.current = true;
         }
@@ -145,7 +145,7 @@ export default function AdminDashboard() {
       totalRevenue,
       pendingOrders: pending,
       completedOrders: completed,
-    }; 
+    };
   }, [orders]);
 
   const popularItems = useMemo(() => {
@@ -154,21 +154,21 @@ export default function AdminDashboard() {
       counts[it.product] = (counts[it.product] || 0) + it.quantity;
     }));
     return Object.entries(counts)
-      .sort((a,b) => b[1]-a[1])
-      .slice(0,5)
-      .map(([name,count]) => ({ name, count }));
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }));
   }, [orders]);
 
   const dailySales = useMemo(() => {
     const map = {};
     orders.forEach(o => {
-      const d = new Date(o.created_at).toISOString().slice(0,10);
+      const d = new Date(o.created_at).toISOString().slice(0, 10);
       map[d] = (map[d] || 0) + (o.total_amount || 0);
     });
     return Object.entries(map)
-      .sort((a,b) => a[0].localeCompare(b[0]))
+      .sort((a, b) => a[0].localeCompare(b[0]))
       .slice(-7)
-      .map(([date,total]) => ({ date, total }));
+      .map(([date, total]) => ({ date, total }));
   }, [orders]);
 
   return (
@@ -222,7 +222,7 @@ export default function AdminDashboard() {
               <PopularItems items={popularItems} loading={loading} />
               <SalesChart data={dailySales} loading={loading} />
               {!loading && (
-                <div className="mt-2 text-muted small">Revenue (last 7 days total): {formatCurrency(dailySales.reduce((s,d)=>s+d.total,0))}</div>
+                <div className="mt-2 text-muted small">{t('revenueLast7Days')}: {formatCurrency(dailySales.reduce((s, d) => s + d.total, 0), lang)}</div>
               )}
             </div>
           </div>

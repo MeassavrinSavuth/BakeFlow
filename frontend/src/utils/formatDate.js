@@ -1,5 +1,14 @@
-export function formatDate(dateString) {
+import { toMyanmarNumber } from './formatCurrency';
+
+export function formatDate(dateString, lang = 'en') {
   if (!dateString) return '';
   const d = new Date(dateString);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  if (lang === 'my') {
+    // Convert digits to Myanmar numerals
+    return toMyanmarNumber(formatted);
+  }
+
+  return formatted;
 }
