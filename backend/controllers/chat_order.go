@@ -858,10 +858,7 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 		// Combined confirmation card with all options
 		frontendURL := resolveFrontendBaseURL()
 
-		paymentLink := fmt.Sprintf("%s/order/%d", frontendURL, orderID)
-		if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) == "scan" {
-			paymentLink = fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
-		}
+		paymentLink := fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
 
 		title := "✅ Order Confirmed"
 		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f\n\nReady to pay? Tap Pay Now below", orderID, itemSummary, subtotal)
@@ -1405,7 +1402,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 
 		frontendURL := resolveFrontendBaseURL()
 
-		payURL := fmt.Sprintf("%s/order/%d", frontendURL, orderID)
+		payURL := fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
 		if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) == "scan" {
 			payURL = fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
 		}

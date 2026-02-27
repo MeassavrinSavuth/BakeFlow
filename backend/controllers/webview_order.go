@@ -37,7 +37,6 @@ func ShowWebviewOrderForm(userID string) {
 	if err != nil {
 		log.Printf("⚠️  WEBVIEW_TOKEN_SECRET not configured; falling back to user_id in URL: %v", err)
 	}
-
 	webviewURL := fmt.Sprintf("%s/order-form.html?user_id=%s&v=6", baseURL, userID)
 	if tok != "" {
 		webviewURL = fmt.Sprintf("%s&t=%s", webviewURL, tok)
