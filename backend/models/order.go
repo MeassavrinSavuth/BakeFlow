@@ -3,13 +3,12 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"bakeflow/configs"
-
-	"github.com/lib/pq"
 )
 
 type Order struct {
@@ -29,6 +28,8 @@ type Order struct {
 	ReorderedFrom *int        `json:"reordered_from,omitempty"`
 	RatingID      *int        `json:"rating_id,omitempty"`
 	SenderID      string      `json:"sender_id,omitempty"`
+	PaymentMethod string      `json:"payment_method,omitempty"`
+	OrderType     string      `json:"order_type,omitempty"`
 	FBName        string      `json:"fb_name,omitempty"`
 	FBAvatar      string      `json:"fb_avatar,omitempty"`
 	CreatedAt     time.Time   `json:"created_at"`
@@ -69,385 +70,198 @@ type CustomerVerification struct {
 }
 
 // GetAllOrders returns all orders from the database with their items
-
 func GetAllOrders() ([]Order, error) {
-	log.Println("🔍 Querying orders table...")
-	queryWithPromotion := `
+	return GetAllOrdersPaginated(0, 100)
+}
+
+// GetAllOrdersPaginated returns orders with LIMIT/OFFSET
+func GetAllOrdersPaginated(offset, limit int) ([]Order, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	log.Printf("🔍 Querying orders table (limit=%d, offset=%d)...", limit, offset)
+	rows, err := configs.DB.Query(`
 		SELECT id, customer_name,
 		       COALESCE(delivery_type, 'pickup') as delivery_type,
 		       COALESCE(address, '') as address,
 		       status, scheduled_for, COALESCE(schedule_type, '') as schedule_type, total_items,
 		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0),
 		       promotion_id, COALESCE(discount, 0),
-		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
+		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id,
+		       COALESCE(payment_method, 'cash') as payment_method,
+		       COALESCE(order_type, '') as order_type,
+		       created_at, completed_at
 		FROM orders
 		ORDER BY id DESC
-	`
-
-	queryWithSchedule := `
-		SELECT id, customer_name,
-		       COALESCE(delivery_type, 'pickup') as delivery_type,
-		       COALESCE(address, '') as address,
-		       status, scheduled_for, COALESCE(schedule_type, '') as schedule_type, total_items,
-		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0),
-		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
-		FROM orders
-		ORDER BY id DESC
-	`
-
-	queryLegacy := `
-		SELECT id, customer_name,
-		       COALESCE(delivery_type, 'pickup') as delivery_type,
-		       COALESCE(address, '') as address,
-		       status, total_items,
-		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0),
-		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
-		FROM orders
-		ORDER BY id DESC
-	`
-
-	// Try newest schema first with promotion fields
-	rows, err := configs.DB.Query(queryWithPromotion)
-	usePromotionCols := true
-	useScheduleCols := true
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
-		// Fallback to schema with scheduling but no promotion
-		msg := err.Error()
-		if strings.Contains(msg, "promotion_id") || strings.Contains(msg, "discount") {
-			usePromotionCols = false
-			rows, err = configs.DB.Query(queryWithSchedule)
-			if err != nil {
-				// Fallback to legacy schema
-				msg = err.Error()
-				if strings.Contains(msg, "scheduled_for") || strings.Contains(msg, "schedule_type") {
-					useScheduleCols = false
-					rows, err = configs.DB.Query(queryLegacy)
-				}
-			}
-		} else if strings.Contains(msg, "scheduled_for") || strings.Contains(msg, "schedule_type") {
-			// Promotion columns exist but not scheduling
-			useScheduleCols = false
-			rows, err = configs.DB.Query(queryLegacy)
-		}
-		if err != nil {
-			log.Printf("❌ Query failed: %v", err)
-			return nil, err
-		}
+		log.Printf("❌ Query failed: %v", err)
+		return nil, err
 	}
 	defer rows.Close()
 
-	log.Println("✅ Query executed, scanning rows...")
-	var orders []Order
-	for rows.Next() {
-		var o Order
-		var completedAt sql.NullTime
-		if usePromotionCols {
-			// Schema with promotion fields
-			var scheduledFor sql.NullTime
-			var scheduleType sql.NullString
-			err := rows.Scan(
-				&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status,
-				&scheduledFor, &scheduleType,
-				&o.TotalItems,
-				&o.Subtotal, &o.DeliveryFee, &o.TotalAmount,
-				&o.PromotionID, &o.Discount,
-				&o.ReorderedFrom, &o.RatingID, &o.SenderID, &o.CreatedAt, &completedAt,
-			)
-			if err != nil {
-				log.Printf("❌ Scan error: %v", err)
-				return nil, err
-			}
-			if scheduledFor.Valid {
-				o.ScheduledFor = &scheduledFor.Time
-			}
-			if scheduleType.Valid {
-				o.ScheduleType = scheduleType.String
-			}
-		} else if useScheduleCols {
-			// Schema with scheduling but no promotion
-			var scheduledFor sql.NullTime
-			var scheduleType sql.NullString
-			err := rows.Scan(
-				&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status,
-				&scheduledFor, &scheduleType,
-				&o.TotalItems,
-				&o.Subtotal, &o.DeliveryFee, &o.TotalAmount,
-				&o.ReorderedFrom, &o.RatingID, &o.SenderID, &o.CreatedAt, &completedAt,
-			)
-			if err != nil {
-				log.Printf("❌ Scan error: %v", err)
-				return nil, err
-			}
-			if scheduledFor.Valid {
-				o.ScheduledFor = &scheduledFor.Time
-			}
-			if scheduleType.Valid {
-				o.ScheduleType = scheduleType.String
-			}
-		} else {
-			// Legacy schema
-			err := rows.Scan(
-				&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status,
-				&o.TotalItems,
-				&o.Subtotal, &o.DeliveryFee, &o.TotalAmount,
-				&o.ReorderedFrom, &o.RatingID, &o.SenderID, &o.CreatedAt, &completedAt,
-			)
-			if err != nil {
-				log.Printf("❌ Scan error: %v", err)
-				return nil, err
-			}
-		}
-		if completedAt.Valid {
-			o.CompletedAt = &completedAt.Time
-		}
-
-		orders = append(orders, o)
+	orders := scanOrders(rows)
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
-
-	// Batch load all items in a single query (avoids N+1 problem)
-	if len(orders) > 0 {
-		orderIDs := make([]int, len(orders))
-		orderMap := make(map[int]int) // orderID -> index in orders slice
-		for i, o := range orders {
-			orderIDs[i] = o.ID
-			orderMap[o.ID] = i
-		}
-
-		// Build query with IN clause
-		itemsQuery := `
-			SELECT 
-				oi.id, oi.order_id, COALESCE(p.id, 0) as product_id, oi.product, oi.quantity, oi.price,
-				COALESCE(oi.note, '') as note,
-				COALESCE(p.image_url, oi.image_url, '') as image_url,
-				oi.created_at
-			FROM order_items oi
-			LEFT JOIN LATERAL (
-				SELECT pr.id, pr.image_url
-				FROM products pr
-				WHERE pr.deleted_at IS NULL
-				  AND (
-					LOWER(pr.name) = LOWER(oi.product)
-					OR LOWER(pr.name) LIKE '%' || LOWER(oi.product) || '%'
-					OR LOWER(oi.product) LIKE '%' || LOWER(pr.name) || '%'
-				  )
-				ORDER BY 
-				  CASE WHEN LOWER(pr.name) = LOWER(oi.product) THEN 0 ELSE 1 END,
-				  ABS(LENGTH(pr.name) - LENGTH(oi.product))
-				LIMIT 1
-			) p ON TRUE
-			WHERE oi.order_id = ANY($1)
-			ORDER BY oi.order_id, oi.id
-		`
-		itemRows, err := configs.DB.Query(itemsQuery, pq.Array(orderIDs))
-		if err == nil {
-			defer itemRows.Close()
-			for itemRows.Next() {
-				var item OrderItem
-				var pid sql.NullInt64
-				if err := itemRows.Scan(&item.ID, &item.OrderID, &pid, &item.Product, &item.Quantity, &item.Price, &item.Note, &item.ImageURL, &item.CreatedAt); err == nil {
-					if pid.Valid && pid.Int64 > 0 {
-						v := int(pid.Int64)
-						item.ProductID = &v
-					}
-					if idx, ok := orderMap[item.OrderID]; ok {
-						orders[idx].Items = append(orders[idx].Items, item)
-					}
-				}
-			}
-		}
-	}
-
+	loadOrderItems(orders)
 	log.Printf("📦 Loaded %d orders", len(orders))
-
 	return orders, nil
 }
 
 func GetOrdersByStatus(status string) ([]Order, error) {
+	return GetOrdersByStatusPaginated(status, 0, 100)
+}
+
+// GetOrdersByStatusPaginated returns orders filtered by status with LIMIT/OFFSET
+func GetOrdersByStatusPaginated(status string, offset, limit int) ([]Order, error) {
 	log.Println("🔍 Querying orders table with status filter...")
 	status = strings.ToLower(strings.TrimSpace(status))
 	if status == "" {
-		return GetAllOrders()
+		return GetAllOrdersPaginated(offset, limit)
 	}
-	queryWithPromotion := `
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := configs.DB.Query(`
 		SELECT id, customer_name,
 		       COALESCE(delivery_type, 'pickup') as delivery_type,
 		       COALESCE(address, '') as address,
 		       status, scheduled_for, COALESCE(schedule_type, '') as schedule_type, total_items,
 		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0),
 		       promotion_id, COALESCE(discount, 0),
-		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
+		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id,
+		       COALESCE(payment_method, 'cash') as payment_method,
+		       COALESCE(order_type, '') as order_type,
+		       created_at, completed_at
 		FROM orders
-		WHERE LOWER(status) = $1
+		WHERE status = $1
 		ORDER BY id DESC
-	`
-
-	queryWithSchedule := `
-		SELECT id, customer_name,
-		       COALESCE(delivery_type, 'pickup') as delivery_type,
-		       COALESCE(address, '') as address,
-		       status, scheduled_for, COALESCE(schedule_type, '') as schedule_type, total_items,
-		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0),
-		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
-		FROM orders
-		WHERE LOWER(status) = $1
-		ORDER BY id DESC
-	`
-
-	queryLegacy := `
-		SELECT id, customer_name,
-		       COALESCE(delivery_type, 'pickup') as delivery_type,
-		       COALESCE(address, '') as address,
-		       status, total_items,
-		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0),
-		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
-		FROM orders
-		WHERE LOWER(status) = $1
-		ORDER BY id DESC
-	`
-
-	rows, err := configs.DB.Query(queryWithPromotion, status)
-	usePromotionCols := true
-	useScheduleCols := true
+		LIMIT $2 OFFSET $3
+	`, status, limit, offset)
 	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "promotion_id") || strings.Contains(msg, "discount") {
-			usePromotionCols = false
-			rows, err = configs.DB.Query(queryWithSchedule, status)
-			if err != nil {
-				msg = err.Error()
-				if strings.Contains(msg, "scheduled_for") || strings.Contains(msg, "schedule_type") {
-					useScheduleCols = false
-					rows, err = configs.DB.Query(queryLegacy, status)
-				}
-			}
-		} else if strings.Contains(msg, "scheduled_for") || strings.Contains(msg, "schedule_type") {
-			useScheduleCols = false
-			rows, err = configs.DB.Query(queryLegacy, status)
-		}
-		if err != nil {
-			log.Printf("❌ Query failed: %v", err)
-			return nil, err
-		}
+		log.Printf("❌ Query failed: %v", err)
+		return nil, err
 	}
 	defer rows.Close()
 
-	log.Println("✅ Query executed, scanning rows...")
+	orders := scanOrders(rows)
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	loadOrderItems(orders)
+	log.Printf("📦 Loaded %d orders", len(orders))
+	return orders, nil
+}
+
+// scanOrders scans order rows into an Order slice (shared by GetAllOrders and GetOrdersByStatus)
+func scanOrders(rows *sql.Rows) []Order {
 	var orders []Order
 	for rows.Next() {
 		var o Order
 		var completedAt sql.NullTime
-		if usePromotionCols {
-			var scheduledFor sql.NullTime
-			var scheduleType sql.NullString
-			err := rows.Scan(
-				&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status,
-				&scheduledFor, &scheduleType,
-				&o.TotalItems,
-				&o.Subtotal, &o.DeliveryFee, &o.TotalAmount,
-				&o.PromotionID, &o.Discount,
-				&o.ReorderedFrom, &o.RatingID, &o.SenderID, &o.CreatedAt, &completedAt,
-			)
-			if err != nil {
-				log.Printf("❌ Scan error: %v", err)
-				return nil, err
-			}
-			if scheduledFor.Valid {
-				o.ScheduledFor = &scheduledFor.Time
-			}
-			if scheduleType.Valid {
-				o.ScheduleType = scheduleType.String
-			}
-		} else if useScheduleCols {
-			var scheduledFor sql.NullTime
-			var scheduleType sql.NullString
-			err := rows.Scan(
-				&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status,
-				&scheduledFor, &scheduleType,
-				&o.TotalItems,
-				&o.Subtotal, &o.DeliveryFee, &o.TotalAmount,
-				&o.ReorderedFrom, &o.RatingID, &o.SenderID, &o.CreatedAt, &completedAt,
-			)
-			if err != nil {
-				log.Printf("❌ Scan error: %v", err)
-				return nil, err
-			}
-			if scheduledFor.Valid {
-				o.ScheduledFor = &scheduledFor.Time
-			}
-			if scheduleType.Valid {
-				o.ScheduleType = scheduleType.String
-			}
-		} else {
-			err := rows.Scan(
-				&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status,
-				&o.TotalItems,
-				&o.Subtotal, &o.DeliveryFee, &o.TotalAmount,
-				&o.ReorderedFrom, &o.RatingID, &o.SenderID, &o.CreatedAt, &completedAt,
-			)
-			if err != nil {
-				log.Printf("❌ Scan error: %v", err)
-				return nil, err
-			}
+		var scheduledFor sql.NullTime
+		var scheduleType sql.NullString
+		var paymentMethod sql.NullString
+		var orderType sql.NullString
+		err := rows.Scan(
+			&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status,
+			&scheduledFor, &scheduleType,
+			&o.TotalItems,
+			&o.Subtotal, &o.DeliveryFee, &o.TotalAmount,
+			&o.PromotionID, &o.Discount,
+			&o.ReorderedFrom, &o.RatingID, &o.SenderID,
+			&paymentMethod,
+			&orderType,
+			&o.CreatedAt, &completedAt,
+		)
+		if err != nil {
+			log.Printf("❌ Scan error: %v", err)
+			continue
+		}
+		if paymentMethod.Valid {
+			o.PaymentMethod = paymentMethod.String
+		}
+		if orderType.Valid {
+			o.OrderType = orderType.String
+		}
+		if scheduledFor.Valid {
+			o.ScheduledFor = &scheduledFor.Time
+		}
+		if scheduleType.Valid {
+			o.ScheduleType = scheduleType.String
 		}
 		if completedAt.Valid {
 			o.CompletedAt = &completedAt.Time
 		}
 		orders = append(orders, o)
 	}
+	return orders
+}
 
-	if len(orders) > 0 {
-		orderIDs := make([]int, len(orders))
-		orderMap := make(map[int]int)
-		for i, o := range orders {
-			orderIDs[i] = o.ID
-			orderMap[o.ID] = i
-		}
-		itemsQuery := `
-			SELECT 
-				oi.id, oi.order_id, COALESCE(p.id, 0) as product_id, oi.product, oi.quantity, oi.price,
-				COALESCE(oi.note, '') as note,
-				COALESCE(p.image_url, oi.image_url, '') as image_url,
-				oi.created_at
-			FROM order_items oi
-			LEFT JOIN LATERAL (
-				SELECT pr.id, pr.image_url
-				FROM products pr
-				WHERE pr.deleted_at IS NULL
-				  AND (
-					LOWER(pr.name) = LOWER(oi.product)
-					OR LOWER(pr.name) LIKE '%' || LOWER(oi.product) || '%'
-					OR LOWER(oi.product) LIKE '%' || LOWER(pr.name) || '%'
-				  )
-				ORDER BY 
-				  CASE WHEN LOWER(pr.name) = LOWER(oi.product) THEN 0 ELSE 1 END,
-				  ABS(LENGTH(pr.name) - LENGTH(oi.product))
-				LIMIT 1
-			) p ON TRUE
-			WHERE oi.order_id = ANY($1)
-			ORDER BY oi.order_id, oi.id
-		`
-		itemRows, err := configs.DB.Query(itemsQuery, pq.Array(orderIDs))
-		if err == nil {
-			defer itemRows.Close()
-			for itemRows.Next() {
-				var item OrderItem
-				var pid sql.NullInt64
-				if err := itemRows.Scan(&item.ID, &item.OrderID, &pid, &item.Product, &item.Quantity, &item.Price, &item.Note, &item.ImageURL, &item.CreatedAt); err == nil {
-					if pid.Valid && pid.Int64 > 0 {
-						v := int(pid.Int64)
-						item.ProductID = &v
-					}
-					if idx, ok := orderMap[item.OrderID]; ok {
-						orders[idx].Items = append(orders[idx].Items, item)
-					}
-				}
+// loadOrderItems batch-loads items for all orders in a single query (avoids N+1)
+func loadOrderItems(orders []Order) {
+	if len(orders) == 0 {
+		return
+	}
+	orderIDs := make([]int, len(orders))
+	orderMap := make(map[int]int)
+	for i, o := range orders {
+		orderIDs[i] = o.ID
+		orderMap[o.ID] = i
+	}
+
+	// Build explicit IN ($1,$2,...) placeholders — PgBouncer doesn't handle ANY($1) with array params
+	placeholders := make([]string, len(orderIDs))
+	args := make([]interface{}, len(orderIDs))
+	for i, id := range orderIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	inClause := strings.Join(placeholders, ",")
+
+	// Fast query: use product_id FK if available, fall back to stored image_url
+	itemRows, err := configs.DB.Query(fmt.Sprintf(`
+		SELECT
+			oi.id, oi.order_id,
+			COALESCE(oi.product_id, 0) as product_id,
+			oi.product, oi.quantity, oi.price,
+			COALESCE(oi.note, '') as note,
+			COALESCE(
+				(SELECT pr.image_url FROM products pr WHERE pr.id = oi.product_id AND pr.deleted_at IS NULL),
+				oi.image_url,
+				''
+			) as image_url,
+			oi.created_at
+		FROM order_items oi
+		WHERE oi.order_id IN (%s)
+		ORDER BY oi.order_id, oi.id
+	`, inClause), args...)
+	if err != nil {
+		log.Printf("⚠️ Failed to load order items: %v", err)
+		return
+	}
+	defer itemRows.Close()
+
+	for itemRows.Next() {
+		var item OrderItem
+		var pid int
+		if err := itemRows.Scan(&item.ID, &item.OrderID, &pid, &item.Product, &item.Quantity, &item.Price, &item.Note, &item.ImageURL, &item.CreatedAt); err == nil {
+			if pid > 0 {
+				item.ProductID = &pid
+			}
+			if idx, ok := orderMap[item.OrderID]; ok {
+				orders[idx].Items = append(orders[idx].Items, item)
 			}
 		}
 	}
-
-	log.Printf("📦 Loaded %d orders", len(orders))
-
-	return orders, nil
 }
 
 // GetOrderItems returns all items for a specific order
@@ -634,12 +448,19 @@ func GetOrderLastItemTimes(orderIDs []int) (map[int]time.Time, error) {
 		return result, nil
 	}
 
-	rows, err := configs.DB.Query(`
+	placeholders := make([]string, len(orderIDs))
+	args := make([]interface{}, len(orderIDs))
+	for i, id := range orderIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	rows, err := configs.DB.Query(fmt.Sprintf(`
 		SELECT order_id, MAX(created_at) as last_item_at
 		FROM order_items
-		WHERE order_id = ANY($1)
+		WHERE order_id IN (%s)
 		GROUP BY order_id
-	`, pq.Array(orderIDs))
+	`, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return result, err
 	}
@@ -703,6 +524,50 @@ func GetCustomerPhones(psid string) ([]string, error) {
 	return phones, nil
 }
 
+// GetCustomerPhonesBatch fetches the most recent phone for multiple PSIDs in one query
+func GetCustomerPhonesBatch(psids []string) (map[string]string, error) {
+	result := make(map[string]string)
+	if len(psids) == 0 || configs.DB == nil {
+		return result, nil
+	}
+	placeholders := make([]string, len(psids))
+	args := make([]interface{}, len(psids))
+	for i, p := range psids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = p
+	}
+	rows, err := configs.DB.Query(fmt.Sprintf(`
+		SELECT DISTINCT ON (psid) psid, phone
+		FROM customer_phones
+		WHERE psid IN (%s)
+		ORDER BY psid, last_seen_at DESC
+	`, strings.Join(placeholders, ",")), args...)
+	if err != nil {
+		return result, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var psid, phone string
+		if err := rows.Scan(&psid, &phone); err == nil {
+			result[psid] = phone
+		}
+	}
+	return result, nil
+}
+
+// GetOrdersCount returns total order count (optionally filtered by status)
+func GetOrdersCount(status string) (int, error) {
+	var count int
+	var err error
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		err = configs.DB.QueryRow("SELECT COUNT(*) FROM orders").Scan(&count)
+	} else {
+		err = configs.DB.QueryRow("SELECT COUNT(*) FROM orders WHERE status = $1", status).Scan(&count)
+	}
+	return count, err
+}
+
 func IsIdentityBlocked(identityType string, value string) (bool, error) {
 	if configs.DB == nil {
 		return false, sql.ErrConnDone
@@ -713,7 +578,7 @@ func IsIdentityBlocked(identityType string, value string) (bool, error) {
 		return false, nil
 	}
 	var exists bool
-	err := configs.DB.QueryRow(`
+	err := configs.QueryRowRetry(`
 		SELECT EXISTS (
 			SELECT 1 FROM blocked_identities WHERE identity_type = $1 AND value = $2
 		)
@@ -808,10 +673,16 @@ func UnblockCustomerIdentity(psid string) ([]string, error) {
 	}
 
 	if len(phones) > 0 {
-		if _, err := tx.Exec(`
+		ph := make([]string, len(phones))
+		delArgs := make([]interface{}, len(phones))
+		for i, p := range phones {
+			ph[i] = fmt.Sprintf("$%d", i+1)
+			delArgs[i] = p
+		}
+		if _, err := tx.Exec(fmt.Sprintf(`
 			DELETE FROM blocked_identities
-			WHERE identity_type = 'phone' AND value = ANY($1)
-		`, pq.Array(phones)); err != nil {
+			WHERE identity_type = 'phone' AND value IN (%s)
+		`, strings.Join(ph, ",")), delArgs...); err != nil {
 			return nil, err
 		}
 	}

@@ -2,12 +2,11 @@ package models
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
 	"bakeflow/configs"
-
-	"github.com/lib/pq"
 )
 
 func GetRecentOrdersBySenderID(senderID string, limit int) ([]Order, error) {
@@ -84,7 +83,14 @@ func GetLatestOrderBySenderIDAndStatuses(senderID string, statuses []string) (*O
 	if senderID == "" || len(statuses) == 0 {
 		return nil, nil
 	}
-	row := configs.DB.QueryRow(`
+	ph := make([]string, len(statuses))
+	args := make([]interface{}, len(statuses)+1)
+	args[0] = senderID
+	for i, s := range statuses {
+		ph[i] = fmt.Sprintf("$%d", i+2)
+		args[i+1] = s
+	}
+	row := configs.DB.QueryRow(fmt.Sprintf(`
 		SELECT id, customer_name,
 		       COALESCE(delivery_type, 'pickup') as delivery_type,
 		       COALESCE(address, '') as address,
@@ -92,10 +98,10 @@ func GetLatestOrderBySenderIDAndStatuses(senderID string, statuses []string) (*O
 		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0), COALESCE(discount, 0),
 		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
 		FROM orders
-		WHERE sender_id = $1 AND TRIM(LOWER(status)) = ANY($2)
+		WHERE sender_id = $1 AND status IN (%s)
 		ORDER BY id DESC
 		LIMIT 1
-	`, senderID, pq.Array(statuses))
+	`, strings.Join(ph, ",")), args...)
 
 	var o Order
 	var completedAt sql.NullTime
@@ -150,7 +156,15 @@ func GetAllOrdersBySenderIDAndStatuses(senderID string, statuses []string) ([]*O
 		lowerStatuses[i] = strings.ToLower(strings.TrimSpace(s))
 	}
 
-	rows, err := configs.DB.Query(`
+	ph := make([]string, len(lowerStatuses))
+	allArgs := make([]interface{}, len(lowerStatuses)+1)
+	allArgs[0] = senderID
+	for i, s := range lowerStatuses {
+		ph[i] = fmt.Sprintf("$%d", i+2)
+		allArgs[i+1] = s
+	}
+
+	rows, err := configs.DB.Query(fmt.Sprintf(`
 		SELECT id, customer_name,
 		       COALESCE(delivery_type, 'pickup') as delivery_type,
 		       COALESCE(address, '') as address,
@@ -158,9 +172,9 @@ func GetAllOrdersBySenderIDAndStatuses(senderID string, statuses []string) ([]*O
 		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0), COALESCE(discount, 0),
 		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
 		FROM orders
-		WHERE sender_id = $1 AND TRIM(LOWER(status)) = ANY($2)
+		WHERE sender_id = $1 AND status IN (%s)
 		ORDER BY id DESC
-	`, senderID, pq.Array(lowerStatuses))
+	`, strings.Join(ph, ",")), allArgs...)
 
 	if err != nil {
 		return nil, err
@@ -219,7 +233,15 @@ func GetLatestOrderByPhoneAndStatuses(phone string, statuses []string) (*Order, 
 	if phone == "" || len(statuses) == 0 {
 		return nil, nil
 	}
-	row := configs.DB.QueryRow(`
+	ph := make([]string, len(statuses))
+	args := make([]interface{}, len(statuses)+1)
+	args[0] = phone
+	for i, s := range statuses {
+		ph[i] = fmt.Sprintf("$%d", i+2)
+		args[i+1] = s
+	}
+	statusIn := strings.Join(ph, ",")
+	row := configs.DB.QueryRow(fmt.Sprintf(`
 		SELECT id, customer_name,
 		       COALESCE(delivery_type, 'pickup') as delivery_type,
 		       COALESCE(address, '') as address,
@@ -227,14 +249,14 @@ func GetLatestOrderByPhoneAndStatuses(phone string, statuses []string) (*Order, 
 		       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0), COALESCE(discount, 0),
 		       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
 		FROM orders
-		WHERE TRIM(LOWER(status)) = ANY($2)
+		WHERE status IN (%s)
 		  AND (
-		    customer_name ILIKE '%' || $1 || '%'
+		    customer_name ILIKE '%%' || $1 || '%%'
 		    OR sender_id IN (SELECT psid FROM customer_phones WHERE phone = $1)
 		  )
 		ORDER BY id DESC
 		LIMIT 1
-	`, phone, pq.Array(statuses))
+	`, statusIn), args...)
 
 	var o Order
 	var completedAt sql.NullTime
@@ -248,7 +270,7 @@ func GetLatestOrderByPhoneAndStatuses(phone string, statuses []string) (*Order, 
 		&reorderedFrom, &ratingID, &o.SenderID, &createdAt, &completedAt,
 	)
 	if err != nil && strings.Contains(err.Error(), "customer_phones") {
-		row = configs.DB.QueryRow(`
+		row = configs.DB.QueryRow(fmt.Sprintf(`
 			SELECT id, customer_name,
 			       COALESCE(delivery_type, 'pickup') as delivery_type,
 			       COALESCE(address, '') as address,
@@ -256,10 +278,10 @@ func GetLatestOrderByPhoneAndStatuses(phone string, statuses []string) (*Order, 
 			       COALESCE(subtotal, 0), COALESCE(delivery_fee, 0), COALESCE(total_amount, 0), COALESCE(discount, 0),
 			       reordered_from, rating_id, COALESCE(sender_id, '') as sender_id, created_at, completed_at
 			FROM orders
-			WHERE customer_name ILIKE '%' || $1 || '%' AND TRIM(LOWER(status)) = ANY($2)
+			WHERE customer_name ILIKE '%%' || $1 || '%%' AND status IN (%s)
 			ORDER BY id DESC
 			LIMIT 1
-		`, phone, pq.Array(statuses))
+		`, statusIn), args...)
 		err = row.Scan(
 			&o.ID, &o.CustomerName, &o.DeliveryType, &o.Address, &o.Status, &o.TotalItems,
 			&o.Subtotal, &o.DeliveryFee, &o.TotalAmount, &o.Discount,

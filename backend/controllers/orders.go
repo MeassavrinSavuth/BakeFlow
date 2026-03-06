@@ -21,7 +21,7 @@ func GetOrders(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(orders)
-}
+}	
 
 // GetOrderByID returns a single order with its items
 // GET /api/orders/{id}

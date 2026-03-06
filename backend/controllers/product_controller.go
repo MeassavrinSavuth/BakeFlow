@@ -904,8 +904,8 @@ func (pc *ProductController) AdminGetProductSales(w http.ResponseWriter, r *http
 			SUM(oi.quantity) AS sold
 		FROM order_items oi
 		JOIN orders o ON o.id = oi.order_id
-		LEFT JOIN products p ON LOWER(p.name) = LOWER(oi.product) AND p.deleted_at IS NULL
-		WHERE LOWER(o.status) = 'delivered'
+		LEFT JOIN products p ON p.id = oi.product_id AND p.deleted_at IS NULL
+		WHERE o.status = 'delivered'
 	`
 	args := []interface{}{}
 	argIdx := 1

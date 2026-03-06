@@ -14,6 +14,12 @@ export default function CustomerPaymentFlow({ order }) {
 
     // Check existing payment status on mount
     useEffect(() => {
+        // If order is already cancelled, skip payment init entirely
+        if (order.status === 'cancelled') {
+            setStatus('cancelled');
+            return;
+        }
+
         const initializePaymentState = async () => {
             try {
                 const res = await fetch(`/api/payments/status?order_id=${order.id}`);
@@ -24,6 +30,10 @@ export default function CustomerPaymentFlow({ order }) {
                     if (data.proof_url) setUploadedUrl(data.proof_url);
                 } else if (data.status === 'rejected') {
                     setStatus('rejected');
+                } else if (data.status === 'expired') {
+                    setStatus('expired');
+                } else if (data.status === 'cancelled') {
+                    setStatus('cancelled');
                 } else if (data.status === 'pending') {
                     // Payment already uploaded, waiting for verification
                     setStatus('verifying');
@@ -39,7 +49,7 @@ export default function CustomerPaymentFlow({ order }) {
         };
 
         initializePaymentState();
-    }, [order.id]);
+    }, [order.id, order.status]);
 
     // Poll for status updates
     useEffect(() => {
@@ -605,6 +615,160 @@ export default function CustomerPaymentFlow({ order }) {
                             color: '#fff', fontWeight: 600, fontSize: '14px',
                             border: 'none', cursor: 'pointer',
                             boxShadow: '0 4px 12px rgba(14,165,233,0.25)',
+                            transition: 'all 0.2s ease',
+                            width: '100%',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                    >
+                        Back to Messenger
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // ── Cancelled State ──
+    if (status === 'cancelled') {
+        return (
+            <div style={{
+                background: '#fff', borderRadius: '16px',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+                border: '1px solid #fecaca', overflow: 'hidden',
+            }}>
+                <div style={{
+                    background: 'linear-gradient(135deg, #fee2e2, #fecaca)',
+                    padding: '32px 24px', textAlign: 'center',
+                }}>
+                    <div style={{
+                        width: '64px', height: '64px', borderRadius: '50%',
+                        background: '#fff', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        margin: '0 auto 16px',
+                        boxShadow: '0 4px 12px rgba(239,68,68,0.2)',
+                    }}>
+                        <X size={28} color="#dc2626" />
+                    </div>
+                    <h2 style={{
+                        fontSize: '20px', fontWeight: 700,
+                        color: '#991b1b', margin: '0 0 6px 0',
+                    }}>
+                        Order Cancelled
+                    </h2>
+                    <p style={{
+                        fontSize: '14px', color: '#b91c1c', margin: 0,
+                        lineHeight: 1.6,
+                    }}>
+                        This order has been cancelled and cannot be paid.
+                    </p>
+                </div>
+
+                <div style={{ padding: '24px', textAlign: 'center' }}>
+                    <div style={{
+                        background: '#f9fafb', border: '1px solid #f0ebe4',
+                        borderRadius: '12px', padding: '16px', marginBottom: '16px',
+                    }}>
+                        <div style={{
+                            display: 'flex', justifyContent: 'space-between',
+                            alignItems: 'center', marginBottom: '8px',
+                        }}>
+                            <span style={{ fontSize: '15px', fontWeight: 700, color: '#1f2937' }}>
+                                Order #{order.id}
+                            </span>
+                            <span style={{
+                                fontSize: '11px', fontWeight: 600,
+                                color: '#dc2626', background: '#fee2e2',
+                                padding: '3px 10px', borderRadius: '20px',
+                            }}>
+                                Cancelled
+                            </span>
+                        </div>
+                        <div style={{
+                            fontSize: '13px', color: '#6b7280',
+                            display: 'flex', justifyContent: 'flex-end',
+                        }}>
+                            <span style={{ fontWeight: 600, color: '#1f2937' }}>
+                                Ks {Number(order.total_amount || 0).toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={returnToMessenger}
+                        style={{
+                            padding: '12px 28px', borderRadius: '10px',
+                            background: 'linear-gradient(135deg, #D8A35D, #F4C27F)',
+                            color: '#fff', fontWeight: 600, fontSize: '14px',
+                            border: 'none', cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(216,163,93,0.3)',
+                            transition: 'all 0.2s ease',
+                            width: '100%',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                    >
+                        Back to Messenger
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // ── Expired State ──
+    if (status === 'expired') {
+        return (
+            <div style={{
+                background: '#fff', borderRadius: '16px',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+                border: '1px solid #e5e7eb', overflow: 'hidden',
+            }}>
+                <div style={{
+                    background: 'linear-gradient(135deg, #f3f4f6, #e5e7eb)',
+                    padding: '32px 24px', textAlign: 'center',
+                }}>
+                    <div style={{
+                        width: '64px', height: '64px', borderRadius: '50%',
+                        background: '#fff', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        margin: '0 auto 16px',
+                        boxShadow: '0 4px 12px rgba(107,114,128,0.2)',
+                    }}>
+                        <Clock size={28} color="#6b7280" />
+                    </div>
+                    <h2 style={{
+                        fontSize: '20px', fontWeight: 700,
+                        color: '#374151', margin: '0 0 6px 0',
+                    }}>
+                        Order Expired
+                    </h2>
+                    <p style={{
+                        fontSize: '14px', color: '#6b7280', margin: 0,
+                        lineHeight: 1.6,
+                    }}>
+                        This order has expired due to no payment within the time limit.
+                    </p>
+                </div>
+
+                <div style={{ padding: '24px', textAlign: 'center' }}>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '12px',
+                        padding: '16px', background: '#f9fafb',
+                        borderRadius: '10px', border: '1px solid #e5e7eb',
+                        marginBottom: '16px',
+                    }}>
+                        <AlertCircle size={16} color="#6b7280" />
+                        <span style={{ fontSize: '13px', color: '#374151', fontWeight: 500, textAlign: 'left' }}>
+                            Please create a new order to continue.
+                        </span>
+                    </div>
+                    <button
+                        onClick={returnToMessenger}
+                        style={{
+                            padding: '12px 28px', borderRadius: '10px',
+                            background: 'linear-gradient(135deg, #D8A35D, #F4C27F)',
+                            color: '#fff', fontWeight: 600, fontSize: '14px',
+                            border: 'none', cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(216,163,93,0.3)',
                             transition: 'all 0.2s ease',
                             width: '100%',
                         }}

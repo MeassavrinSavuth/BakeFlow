@@ -11,6 +11,40 @@ let deliveryType = null;
 let geo = null;
 let map = null;
 let marker = null;
+window.stockStatus = window.stockStatus || {};
+
+async function fetchStockStatus(productIds) {
+    if (!productIds || productIds.length === 0) return;
+    try {
+        const res = await fetch('/api/stock/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ product_ids: productIds })
+        });
+        const data = await res.json();
+        if (data.products) {
+            data.products.forEach(p => {
+                window.stockStatus[p.product_id] = p;
+            });
+        }
+    } catch (e) {
+        console.log('Failed to fetch stock status', e);
+    }
+}
+
+function getAvailableStock(product) {
+    const stockInfo = window.stockStatus && window.stockStatus[product.id];
+    if (stockInfo && Number.isFinite(stockInfo.available_stock)) return stockInfo.available_stock;
+    if (Number.isFinite(product.stock)) return product.stock;
+    return null;
+}
+
+function getStockState(product) {
+    const stockInfo = window.stockStatus && window.stockStatus[product.id];
+    if (stockInfo && stockInfo.status) return stockInfo.status;
+    if (product.availability_status === 'sold_out') return 'out_of_stock';
+    return null;
+}
 
 // ========== Initialization ==========
 async function init() {
@@ -25,10 +59,14 @@ async function init() {
             price: Number(p.price) || 0,
             created_at: p.created_at,
             image_url: p.image_url || '',
-            description: p.description || ''
+            description: p.description || '',
+            availability_status: p.availability_status || 'available',
+            stock: Number.isFinite(p.stock) ? p.stock : null
         }));
         products.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
         window.products = products;
+        const productIds = products.map(p => p.id);
+        await fetchStockStatus(productIds);
     } catch (e) {
         console.log('❌ Failed to load products', e);
         products = [];
@@ -167,19 +205,29 @@ function renderProducts() {
         const img = p.image_url && p.image_url.length > 0 
             ? p.image_url 
             : `https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=200&fit=crop`;
+        const stockState = getStockState(p);
+        const availableStock = getAvailableStock(p);
+        const isOutOfStock = stockState === 'out_of_stock' || (availableStock !== null && availableStock <= 0);
+        const isLowStock = stockState === 'low_stock' || (!isOutOfStock && availableStock !== null && availableStock <= 5);
+        const qty = cart[p.id] || 0;
+        const disablePlus = isOutOfStock || (availableStock !== null && qty >= availableStock);
+        const stockHint = isOutOfStock
+            ? '<div class="p-stock-hint p-stock-hint--out">Out of stock</div>'
+            : (isLowStock && availableStock !== null ? `<div class="p-stock-hint">Only ${availableStock} left in stock</div>` : '');
         return `
         <div class="p-card">
             <img class="p-thumb" src="${img}" alt="${escapeHtml(p.name)}" />
             <div class="p-info">
                 <div class="p-name">${escapeHtml(p.name)}</div>
+                ${stockHint}
                 ${p.description ? `<div class="p-desc">${escapeHtml(p.description)}</div>` : ''}
             </div>
             <div class="p-cta">
                 <div class="p-price">Ks ${p.price.toFixed(2)}</div>
                 <div class="qty-controls">
                     <button class="qty-btn minus" onclick="decreaseQty(${p.id})" id="dec-${p.id}" disabled>−</button>
-                    <div class="qty-display" id="qty-${p.id}">0</div>
-                    <button class="qty-btn plus" onclick="increaseQty(${p.id})">+</button>
+                    <div class="qty-display" id="qty-${p.id}">${qty}</div>
+                    <button class="qty-btn plus" onclick="increaseQty(${p.id})" id="inc-${p.id}" ${disablePlus ? 'disabled' : ''}>+</button>
                 </div>
             </div>
         </div>`;
@@ -188,8 +236,15 @@ function renderProducts() {
 
 // ========== Cart Management ==========
 function increaseQty(productId) {
-    if (!cart[productId]) cart[productId] = 0;
-    cart[productId]++;
+    const product = products.find(p => p.id == productId);
+    if (!product) return;
+    const availableStock = getAvailableStock(product);
+    const current = cart[productId] || 0;
+    if (availableStock !== null && current >= availableStock) {
+        updateCart();
+        return;
+    }
+    cart[productId] = current + 1;
     updateCart();
 }
 
@@ -216,11 +271,25 @@ async function updateCart() {
     let itemCount = 0;
 
     products.forEach(p => {
-        const qty = cart[p.id] || 0;
+        const availableStock = getAvailableStock(p);
+        let qty = cart[p.id] || 0;
+        if (availableStock !== null && qty > availableStock) {
+            qty = availableStock;
+            if (qty <= 0) {
+                delete cart[p.id];
+                qty = 0;
+            } else {
+                cart[p.id] = qty;
+            }
+        }
         const qtyEl = document.getElementById(`qty-${p.id}`);
         const decEl = document.getElementById(`dec-${p.id}`);
+        const incEl = document.getElementById(`inc-${p.id}`);
+        const stockState = getStockState(p);
+        const isOutOfStock = stockState === 'out_of_stock' || (availableStock !== null && availableStock <= 0);
         if (qtyEl) qtyEl.textContent = qty;
         if (decEl) decEl.disabled = qty === 0;
+        if (incEl) incEl.disabled = isOutOfStock || (availableStock !== null && qty >= availableStock);
     });
 
     // Build cart items for checkout calculation

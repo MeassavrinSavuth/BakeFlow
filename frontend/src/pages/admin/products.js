@@ -531,9 +531,6 @@ export default function ProductsPage() {
                   <p className="text-muted mb-0 small">Manage your catalog, visibility, and inventory levels</p>
                 </div>
                 <div className="d-flex align-items-center gap-2">
-                  <button className="btn btn-outline-secondary d-none d-md-inline-flex">
-                    <i className="bi bi-download me-2"></i>Export CSV
-                  </button>
                   <Link href="/admin/products/new">
                     <button className="btn btn-primary"><i className="bi bi-plus-lg me-2"></i>Add Product</button>
                   </Link>

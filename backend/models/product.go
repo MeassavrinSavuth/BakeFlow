@@ -4,11 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"bakeflow/configs"
-
-	"github.com/lib/pq"
 )
 
 // Product represents a product in the system
@@ -296,16 +296,24 @@ func GetProductsByIDs(ids []int, onlyActive bool) ([]Product, error) {
 	if len(ids) == 0 {
 		return []Product{}, nil
 	}
-	query := `
+	ph := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		ph[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	inClause := strings.Join(ph, ",")
+
+	query := fmt.Sprintf(`
 		SELECT id, name, description, category, COALESCE(tags, '[]'::jsonb) as tags, price, stock, image_url, status, created_at, updated_at
 		FROM products
-		WHERE deleted_at IS NULL AND id = ANY($1)
-	`
+		WHERE deleted_at IS NULL AND id IN (%s)
+	`, inClause)
 	if onlyActive {
 		query += " AND status = 'active'"
 	}
-	query += " ORDER BY array_position($1, id)"
-	rows, err := configs.DB.Query(query, pq.Array(ids))
+	query += fmt.Sprintf(" ORDER BY array_position(ARRAY[%s]::int[], id)", inClause)
+	rows, err := configs.DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

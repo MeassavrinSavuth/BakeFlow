@@ -13,6 +13,35 @@ window.productFilters = {
 };
 window.productsLoadError = '';
 
+// Remaining stock helper (per-user, subtracts items already in cart)
+function getRemainingStockForProduct(productId, opts = {}) {
+    const product = window.products?.find(p => p.id == productId);
+    if (!product) return null;
+
+    const stockInfo = window.stockStatus && window.stockStatus[product.id];
+    let available = null;
+    if (stockInfo && Number.isFinite(stockInfo.available_stock)) {
+        available = stockInfo.available_stock;
+    } else if (Number.isFinite(product.stock)) {
+        available = product.stock;
+    }
+    if (!Number.isFinite(available)) return null;
+
+    // Subtract what's already in the cart; when editing a cart item we can exclude its qty
+    const cartObj = (typeof window.getCart === 'function') ? window.getCart() : {};
+    let inCart = Number(cartObj[product.id] || 0);
+    if (opts.excludeCartItemId && typeof window.getCartItem === 'function') {
+        const editingItem = window.getCartItem(opts.excludeCartItemId);
+        if (editingItem && editingItem.productId == product.id) {
+            inCart = Math.max(0, inCart - Number(editingItem.qty || 0));
+        }
+    }
+
+    const remaining = available - inCart;
+    return remaining < 0 ? 0 : remaining;
+}
+window.getRemainingStockForProduct = getRemainingStockForProduct;
+
 // Category definitions with icons
 const CATEGORIES = [
     { id: 'all', name: 'All', icon: 'grid-2x2' },
@@ -114,7 +143,7 @@ async function loadProducts() {
                 image_url: p.image_url || '',
                 description: p.description || '',
                 availability_status: p.availability_status || 'available',
-                stock: p.stock || 0,
+                stock: Number.isFinite(p.stock) ? p.stock : null,
                 has_customization: true,
                 tags: Array.isArray(p.tags) ? p.tags : [],
                 avg_rating: p.avg_rating || 0,
@@ -1470,7 +1499,7 @@ function renderProducts() {
                 <div class="qty-controls${isSoldOut ? ' qty-controls--disabled' : ''}">
                     <button class="qty-btn minus" onclick="handleDecreaseClick(event, ${p.id})" id="dec-${p.id}" ${!inCart || isSoldOut ? 'disabled' : ''}>−</button>
                     <div class="qty-display" id="qty-${p.id}">${cart[p.id] || 0}</div>
-                    <button class="qty-btn plus" onclick="handleAddClick(event, ${p.id})" ${isSoldOut ? 'disabled' : ''}>+</button>
+                    <button class="qty-btn plus" onclick="handleAddClick(event, ${p.id})" data-product-id="${p.id}" ${isSoldOut ? 'disabled' : ''}>+</button>
                 </div>
             </div>
         </div>`;

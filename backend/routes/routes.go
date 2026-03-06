@@ -109,6 +109,9 @@ func SetupRoutes() http.Handler {
 	// Handle user choice: add to existing order or create new
 	router.HandleFunc("/api/chat/orders/choice", controllers.HandleOrderChoice).Methods("POST", "OPTIONS")
 
+	// Cancel a pending QR payment order (user-facing)
+	router.HandleFunc("/api/chat/orders/{id:[0-9]+}/cancel", controllers.CancelPendingQROrder).Methods("POST", "OPTIONS")
+
 	// Authenticated webview user APIs (requires signed token ?t=...)
 	router.HandleFunc("/api/me/saved-orders", controllers.MeSavedOrders).Methods("GET", "POST", "OPTIONS")
 	router.HandleFunc("/api/me/saved-orders/{id:[0-9]+}", controllers.MeDeleteSavedOrder).Methods("DELETE", "OPTIONS")
@@ -164,7 +167,7 @@ func SetupRoutes() http.Handler {
 	router.Handle("/api/admin/top-products", controllers.RequireAdmin(http.HandlerFunc(productController.AdminGetTopProducts))).Methods("GET", "OPTIONS")
 	// Admin Product Sales (aggregated sold counts)
 	router.Handle("/api/admin/product-sales", controllers.RequireAdmin(http.HandlerFunc(productController.AdminGetProductSales))).Methods("GET", "OPTIONS")
-	router.Handle("/api/admin/daily-stock", controllers.RequireAdmin(http.HandlerFunc(controllers.AdminGetDailyStockLogs))).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/admin/daily-stock", controllers.AdminGetDailyStockLogs).Methods("GET", "OPTIONS")
 
 	// Product Alerts
 	router.HandleFunc("/api/products/low-stock", productController.GetLowStockProducts).Methods("GET", "OPTIONS")
@@ -213,6 +216,15 @@ func SetupRoutes() http.Handler {
 	// Admin Payment API
 	router.HandleFunc("/api/admin/payments", controllers.AdminGetPayments).Methods("GET", "OPTIONS")
 	router.HandleFunc("/api/admin/payments/{id:[0-9]+}/verify", controllers.AdminVerifyPayment).Methods("POST", "OPTIONS")
+
+	// Preorder Sessions API (pay-before-order for custom cakes)
+	router.HandleFunc("/api/preorder-sessions", controllers.CreatePreorderSession).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/preorder-sessions/{id:[0-9]+}/upload", controllers.UploadPreorderPaymentProof).Methods("POST", "OPTIONS")
+	router.HandleFunc("/api/preorder-sessions/{id:[0-9]+}/status", controllers.GetPreorderSessionStatus).Methods("GET", "OPTIONS")
+
+	// Admin Preorder Sessions API
+	router.HandleFunc("/api/admin/preorder-sessions", controllers.AdminGetPreorderSessions).Methods("GET", "OPTIONS")
+	router.HandleFunc("/api/admin/preorder-sessions/{id:[0-9]+}/verify", controllers.AdminVerifyPreorderSession).Methods("POST", "OPTIONS")
 
 	// QR Code endpoint
 	router.HandleFunc("/qr_codes/order_{id:[0-9]+}.png", controllers.GetQRCodeHandler).Methods("GET")

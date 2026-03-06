@@ -4,12 +4,13 @@ import Head from 'next/head';
 import Sidebar from '../../components/Sidebar';
 import TopNavbar from '../../components/TopNavbar';
 import SummaryCards from '../../components/SummaryCards';
-import RecentOrdersTable from '../../components/RecentOrdersTable';
+import Link from 'next/link';
 import Image from 'next/image';
 import SalesChart from '../../components/SalesChart';
 import NotificationPreviewCard from '../../components/NotificationPreviewCard';
 import { useTranslation } from '../../utils/i18n';
 import { formatCurrency } from '../../utils/formatCurrency';
+import { statusColor } from '../../utils/statusColor';
 import { useNotifications } from '../../contexts/NotificationContext';
 
 export default function AdminDashboard() {
@@ -232,6 +233,21 @@ export default function AdminDashboard() {
       .slice(-7)
       .map(([date,total]) => ({ date, total }));
   }, [orders]);
+  const recentOrders = useMemo(() => {
+    return [...orders]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 5);
+  }, [orders]);
+  const topProducts = useMemo(() => {
+    const ranked = products.map(p => {
+      const byId = salesItems.find(it => it.product_id === p.id)?.sold;
+      const byName = salesItems.find(it => String(it.name || '').trim().toLowerCase() === String(p.name || '').trim().toLowerCase())?.sold;
+      const byDelivered = soldCounts.get(p.id) ?? soldCounts.get(`name:${String(p.name || '').trim().toLowerCase()}`);
+      const totalSold = (byId ?? byName ?? byDelivered ?? 0);
+      return { product: p, totalSold };
+    });
+    return ranked.sort((a, b) => b.totalSold - a.totalSold).slice(0, 4);
+  }, [products, salesItems, soldCounts]);
 
   return (
     <>
@@ -278,41 +294,105 @@ export default function AdminDashboard() {
             />
             <div className="container-fluid px-4 py-4">
               <SummaryCards stats={stats} loading={loading} />
-              <div id="recent-orders">
-                <RecentOrdersTable orders={orders} loading={loading} error={error} />
+              <div className="row g-4 mb-4">
+                <div className="col-12 col-lg-8">
+                  <div className="h-100">
+                    <SalesChart data={dailySales} loading={loading} />
+                    {!loading && (
+                      <div className="mt-2 text-muted small">
+                        Revenue (last 7 days total): {formatCurrency(dailySales.reduce((s,d)=>s+d.total,0))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="col-12 col-lg-4">
+                  <div id="recent-orders" className="card border-0 shadow-sm h-100">
+                    <div className="card-body d-flex flex-column">
+                      <div className="d-flex align-items-center justify-content-between mb-3">
+                        <h5 className="card-title mb-0"><i className="bi bi-clock-history me-2"></i>{t('recentOrders')}</h5>
+                      </div>
+                      {error && <div className="alert alert-danger mb-3">{error}</div>}
+                      {loading && (
+                        <div className="table-loading">
+                          {[...Array(5)].map((_,i) => <div key={i} className="skeleton skeleton-row mb-2" />)}
+                        </div>
+                      )}
+                      {!loading && (
+                        <div className="table-responsive">
+                          <table className="table table-sm align-middle mb-0">
+                            <thead className="table-light">
+                              <tr>
+                                <th>{t('orderID')}</th>
+                                <th>{t('customer')}</th>
+                                <th>{t('status')}</th>
+                                <th className="text-end">{t('total')}</th>
+                                <th className="text-end">{t('action')}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {recentOrders.map(order => (
+                                <tr key={order.id}>
+                                  <td className="fw-semibold">#{order.id}</td>
+                                  <td>{order.customer_name}</td>
+                                  <td><span className={`badge bg-${statusColor(order.status)} px-2 py-1`}>{order.status}</span></td>
+                                  <td className="text-end">{formatCurrency(order.total_amount)}</td>
+                                  <td className="text-end">
+                                    <Link href="/admin/orders" className="btn btn-sm btn-outline-secondary">
+                                      View Details
+                                    </Link>
+                                  </td>
+                                </tr>
+                              ))}
+                              {recentOrders.length === 0 && !error && (
+                                <tr><td colSpan={5} className="text-center text-muted py-4">{t('noOrdersYet')}</td></tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      <div className="mt-auto pt-3 d-flex justify-content-end">
+                        <Link href="/admin/orders" className="btn btn-sm btn-outline-primary">
+                          View All Orders
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="card border-0 shadow-sm mb-4">
+              <div className="card border-0 shadow-sm">
                 <div className="card-body">
-                  <h5 className="card-title mb-3"><i className="bi bi-box-seam me-2 text-primary"/>{t('productsTitle')}</h5>
-                  {productsLoading && <div className="row g-3">{[1,2,3,4,5,6,7,8].map(i => <div key={i} className="col-6 col-md-3"><div className="card h-100 skeleton" /></div>)}</div>}
-                  {!productsLoading && products.length === 0 && <div className="text-muted">{t('noProductsYet')}</div>}
-                  {!productsLoading && products.length > 0 && (
+                  <div className="d-flex align-items-center justify-content-between mb-3">
+                    <h5 className="card-title mb-0">Top Selling Products</h5>
+                  </div>
+                  {productsLoading && (
                     <div className="row g-3">
-                      {products.slice(0,8).map(p => {
-                        const img = p.image_url || 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=300&h=300&fit=crop';
-                        const byId = salesItems.find(it => it.product_id === p.id)?.sold;
-                        const byName = salesItems.find(it => String(it.name || '').trim().toLowerCase() === String(p.name || '').trim().toLowerCase())?.sold;
-                        const byDelivered = soldCounts.get(p.id) ?? soldCounts.get(`name:${String(p.name || '').trim().toLowerCase()}`);
-                        const totalSold = (byId ?? byName ?? byDelivered ?? 0);
+                      {[1,2,3,4].map(i => <div key={i} className="col-6 col-md-3"><div className="card h-100 skeleton" /></div>)}
+                    </div>
+                  )}
+                  {!productsLoading && topProducts.length === 0 && <div className="text-muted">{t('noProductsYet')}</div>}
+                  {!productsLoading && topProducts.length > 0 && (
+                    <div className="row g-3">
+                      {topProducts.map(({ product, totalSold }) => {
+                        const img = product.image_url || 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=200&h=200&fit=crop';
                         return (
-                          <div key={p.id} className="col-6 col-md-3">
+                          <div key={product.id} className="col-6 col-md-3">
                             <div className="card h-100 border-0 shadow-sm">
-                              <div className="ratio ratio-1x1 rounded-top overflow-hidden">
-                                <Image
-                                  src={img}
-                                  alt={p.name}
-                                  fill
-                                  sizes="(max-width: 768px) 50vw, 25vw"
-                                  style={{ objectFit: 'cover' }}
-                                />
-                              </div>
-                              <div className="card-body d-flex flex-column gap-2">
-                                <div className="d-flex align-items-center justify-content-between">
-                                  <div className="fw-semibold">{p.name}</div>
-                                  <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle">{p.category}</span>
+                              <div className="d-flex gap-3 p-3 align-items-center">
+                                <div className="rounded overflow-hidden flex-shrink-0" style={{ width: 64, height: 64 }}>
+                                  <Image
+                                    src={img}
+                                    alt={product.name}
+                                    width={64}
+                                    height={64}
+                                    style={{ objectFit: 'cover' }}
+                                  />
                                 </div>
-                                <div className="d-flex align-items-center justify-content-end text-muted small">
-                                  <span className="badge bg-accent text-dark border">{totalSold} sold</span>
+                                <div className="flex-grow-1">
+                                  <div className="fw-semibold text-truncate">{product.name}</div>
+                                  <div className="d-flex align-items-center gap-2 mt-1">
+                                    <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle">{product.category}</span>
+                                    <span className="badge bg-accent text-dark border">{totalSold} sold</span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -321,12 +401,13 @@ export default function AdminDashboard() {
                       })}
                     </div>
                   )}
+                  <div className="mt-3 d-flex justify-content-end">
+                    <Link href="/admin/products" className="btn btn-sm btn-outline-primary">
+                      View All Products
+                    </Link>
+                  </div>
                 </div>
               </div>
-              <SalesChart data={dailySales} loading={loading} />
-              {!loading && (
-                <div className="mt-2 text-muted small">Revenue (last 7 days total): {formatCurrency(dailySales.reduce((s,d)=>s+d.total,0))}</div>
-              )}
             </div>
           </div>
         </div>

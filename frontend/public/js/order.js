@@ -184,6 +184,11 @@ async function validateCartStock() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ items: cartForValidation })
         });
+        if (res.status === 503) {
+            // Temporary DB issue (Neon cold start) — allow order to proceed (fail-open)
+            console.warn('Stock validation: 503 (DB warming up), proceeding with order');
+            return { valid: true, message: '', items: [] };
+        }
         const data = await res.json();
         return data;
     } catch (e) {
@@ -253,7 +258,7 @@ async function submitOrder() {
         const submitBtn = document.getElementById('placeOrderBtn');
         if (submitBtn) {
             submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="spinner"></span> Placing custom cake order...';
+            submitBtn.innerHTML = '<span class="spinner"></span> Placing Order...';
         }
 
         const sched = { type: deliveryType, date: po.scheduleDate, time: po.scheduleTime };
@@ -399,7 +404,15 @@ async function submitOrder() {
             submitBtn.innerHTML = '<span class="spinner"></span> Placing order...';
         }
         (async () => {
-            const method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+            // Scheduled & custom orders → forced scan (no COD)
+            const pendingSched = window.getPendingSchedule ? window.getPendingSchedule() : null;
+            const hasCustomItem = items.some(it => (it.name || '').toLowerCase().includes('custom'));
+            let method;
+            if (pendingSched || hasCustomItem) {
+                method = 'scan';
+            } else {
+                method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+            }
             if (!method) { resetSubmitButton(); return; }
             window.__preferredPayMethod = method;
             processOrderSubmission(name, phone, address, notes, deliveryType, userId, tok, items, method);
@@ -411,7 +424,14 @@ async function submitOrder() {
             submitBtn.innerHTML = '<span class="spinner"></span> Placing order...';
         }
         (async () => {
-            const method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+            const pendingSched2 = window.getPendingSchedule ? window.getPendingSchedule() : null;
+            const hasCustomItem2 = items.some(it => (it.name || '').toLowerCase().includes('custom'));
+            let method;
+            if (pendingSched2 || hasCustomItem2) {
+                method = 'scan';
+            } else {
+                method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+            }
             if (!method) { resetSubmitButton(); return; }
             window.__preferredPayMethod = method;
             processOrderSubmission(name, phone, address, notes, deliveryType, userId, tok, items, method);
@@ -435,6 +455,9 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
             : `📝 Item notes: ${itemNotesText}`;
     }
 
+    // Include pending schedule if user set one via the Schedule button
+    const pendingSchedule = window.getPendingSchedule ? window.getPendingSchedule() : null;
+
     const orderData = {
         user_id: userId,
         items: items,
@@ -444,7 +467,7 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
         delivery_type: deliveryType,
         address: deliveryType === 'delivery' ? address : 'Pickup at store',
         notes: combinedNotes,
-        schedule: null, // Regular "Order Now" never sends a schedule
+        schedule: pendingSchedule || null,
         geo: window.getGeo(),
         delivery_directions: document.getElementById('deliveryDirections')?.value.trim() || '',
         payment_method: paymentMethod || 'cash'
@@ -564,6 +587,11 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
                 const payUrl = payMethod === 'scan'
                     ? `/order/${data.order_id}?pay=scan`
                     : `/order/${data.order_id}`;
+
+                // Clear pending schedule after successful order
+                if (window.setPendingSchedule) window.setPendingSchedule(null);
+                try { localStorage.removeItem(`pending_schedule_${getUserId()}`); } catch(e) {}
+
                 window.location.href = payUrl;
             } else {
                 // Handle specific errors (like insufficient stock)
@@ -571,6 +599,16 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
                     showError(`Sorry, only ${data.available} ${data.product} available. Please reduce quantity.`);
                 } else if (data && data.error === 'product_unavailable') {
                     showError(data.message || 'Product is no longer available');
+                } else if (data && data.error === 'pending_qr_payment') {
+                    showPendingQRPaymentAlert(data, orderData);
+                } else if (data && data.error === 'active_custom_order') {
+                    showActiveCustomOrderAlert(data);
+                } else if (data && data.error === 'active_scheduled_order') {
+                    showActiveScheduledOrderAlert(data);
+                } else if (data && data.error === 'active_cod_order') {
+                    showActiveCODOrderAlert(data, orderData, name, phone);
+                } else if (data && data.error === 'temporary_error') {
+                    showError('Temporary connection issue. Please tap "Place Order" again.');
                 } else {
                     showError('Order failed: ' + (data && data.message ? data.message : 'Unknown error'));
                 }
@@ -633,6 +671,435 @@ function resetSubmitButton() {
     if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = 'Place Order';
+    }
+}
+
+// Modal for pending QR payment order — single order, clean UX
+function showPendingQRPaymentAlert(responseData, currentOrderData) {
+    const orderId = responseData.order_id;
+    const totalItems = responseData.total_items || 0;
+    const totalAmount = responseData.total_amount || 0;
+    const orderStatus = responseData.order_status || 'pending_payment';
+
+    const statusLabel = orderStatus === 'pending_verification' ? 'Receipt Uploaded — Verifying' : 'Awaiting Payment';
+    const statusColor = orderStatus === 'pending_verification' ? '#D97706' : '#DC2626';
+    const statusBg = orderStatus === 'pending_verification' ? '#FEF3C7' : '#FEE2E2';
+
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.background = 'rgba(0,0,0,0.35)';
+    overlay.style.backdropFilter = 'blur(3px)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '9999';
+    const dialog = document.createElement('div');
+    dialog.style.background = '#fff';
+    dialog.style.borderRadius = '16px';
+    dialog.style.boxShadow = '0 12px 40px rgba(0,0,0,0.18)';
+    dialog.style.width = 'min(92vw, 400px)';
+    dialog.style.overflow = 'hidden';
+    dialog.style.position = 'relative';
+    dialog.innerHTML = `
+        <div style="background:linear-gradient(135deg,#FFF4EA,#FFECD2);padding:24px;text-align:center;position:relative;">
+            <button id="qrModalCloseBtn" style="position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,0.08);color:#6b7280;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" aria-label="Close">&times;</button>
+            <div style="width:48px;height:48px;border-radius:50%;background:#fff;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;box-shadow:0 2px 8px rgba(216,163,93,0.2);">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D8A35D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            </div>
+            <div style="font-size:18px;font-weight:700;color:#1f2937;margin-bottom:4px;">Pending Payment Order</div>
+            <div style="font-size:13px;color:#6b7280;">You have a pending QR payment order.</div>
+        </div>
+        <div style="padding:20px 24px;">
+            <div style="background:#f9fafb;border:1px solid #f0ebe4;border-radius:12px;padding:16px;margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <span style="font-size:15px;font-weight:700;color:#1f2937;">Order #BF-${orderId}</span>
+                    <span style="font-size:11px;font-weight:600;color:${statusColor};background:${statusBg};padding:3px 10px;border-radius:20px;">${statusLabel}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:#6b7280;">
+                    <span>Items: ${totalItems}</span>
+                    <span style="font-weight:600;color:#1f2937;">Total: Ks ${Number(totalAmount).toFixed(2)}</span>
+                </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <button id="continuePayBtn" style="padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#D8A35D,#F4C27F);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 2px 8px rgba(216,163,93,0.3);transition:all 0.15s;">Continue Payment</button>
+                <button id="cancelStartNewBtn" style="padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#374151;font-weight:600;font-size:13px;cursor:pointer;transition:all 0.15s;">Cancel & Start New</button>
+            </div>
+        </div>
+    `;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    const escHandler = (e) => { if (e.key === 'Escape') cleanup(); };
+    const cleanup = () => {
+        document.removeEventListener('keydown', escHandler);
+        try { document.body.removeChild(overlay); } catch(e){}
+    };
+
+    // Close X button — just dismiss, no cancel
+    dialog.querySelector('#qrModalCloseBtn').addEventListener('click', () => { cleanup(); });
+
+    // Click outside dialog (on overlay) — just dismiss
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+    // ESC key — just dismiss
+    document.addEventListener('keydown', escHandler);
+
+    // Continue Payment → redirect to payment page
+    dialog.querySelector('#continuePayBtn').addEventListener('click', () => {
+        cleanup();
+        window.location.href = `/order/${orderId}?pay=scan`;
+    });
+
+    // Cancel & Start New → cancel old order, then resubmit current order
+    dialog.querySelector('#cancelStartNewBtn').addEventListener('click', async () => {
+        const cancelBtn = dialog.querySelector('#cancelStartNewBtn');
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = 'Cancelling...';
+
+        try {
+            const tok = getAuthToken();
+            const userId = getResolvedUserId();
+            const tokenParam = tok ? `?t=${encodeURIComponent(tok)}` : '';
+            const res = await fetch(`/api/chat/orders/${orderId}/cancel${tokenParam}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId })
+            });
+            const result = await res.json();
+            if (result.success) {
+                cleanup();
+                // Re-click place order to resubmit with scan payment
+                const submitBtn = document.getElementById('placeOrderBtn');
+                if (submitBtn) {
+                    isSubmitting = false;
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Place Order';
+                    submitBtn.click();
+                }
+            } else {
+                cancelBtn.disabled = false;
+                cancelBtn.textContent = 'Cancel & Start New';
+                showError(result.message || 'Failed to cancel order.');
+            }
+        } catch (e) {
+            cancelBtn.disabled = false;
+            cancelBtn.textContent = 'Cancel & Start New';
+            showError('Network error. Please try again.');
+        }
+    });
+}
+
+// ─── Active Custom Cake Order Modal ──────────────────────────────
+function showActiveCustomOrderAlert(responseData) {
+    const orderId = responseData.order_id;
+    const totalItems = responseData.total_items || 0;
+    const totalAmount = responseData.total_amount || 0;
+    const orderStatus = responseData.order_status || 'scheduled';
+    const paymentStatus = responseData.payment_status || '';
+    const hasProof = responseData.has_proof === true;
+
+    const statusLabel = orderStatus === 'preparing' ? 'Being Prepared'
+        : orderStatus === 'ready' ? 'Ready for Pickup/Delivery'
+        : orderStatus === 'pending' ? 'Awaiting Confirmation'
+        : 'Scheduled';
+    const statusColor = orderStatus === 'preparing' ? '#2563EB'
+        : orderStatus === 'ready' ? '#059669'
+        : orderStatus === 'pending' ? '#D97706'
+        : '#7C3AED';
+    const statusBg = orderStatus === 'preparing' ? '#DBEAFE'
+        : orderStatus === 'ready' ? '#D1FAE5'
+        : orderStatus === 'pending' ? '#FEF3C7'
+        : '#EDE9FE';
+
+    // Payment status banner
+    let paymentBanner = '';
+    if (hasProof && paymentStatus === 'pending') {
+        paymentBanner = `
+            <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                <span style="font-size:22px;">⏳</span>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#92400E;">Payment Pending Verification</div>
+                    <div style="font-size:12px;color:#A16207;margin-top:2px;">You've already paid. Admin is reviewing your payment.</div>
+                </div>
+            </div>`;
+    } else if (paymentStatus === 'verified') {
+        paymentBanner = `
+            <div style="background:#D1FAE5;border:1px solid #A7F3D0;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                <span style="font-size:22px;">✅</span>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#065F46;">Payment Verified</div>
+                    <div style="font-size:12px;color:#047857;margin-top:2px;">Your payment has been confirmed.</div>
+                </div>
+            </div>`;
+    } else if (!hasProof && !paymentStatus) {
+        paymentBanner = `
+            <div style="background:#FEE2E2;border:1px solid #FECACA;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                <span style="font-size:22px;">💳</span>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#991B1B;">Payment Required</div>
+                    <div style="font-size:12px;color:#B91C1C;margin-top:2px;">Please complete your payment for this order first.</div>
+                </div>
+            </div>`;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.18);width:min(92vw,400px);overflow:hidden;position:relative;';
+    dialog.innerHTML = `
+        <div style="background:linear-gradient(135deg,#FFF4EA,#FFECD2);padding:24px;text-align:center;position:relative;">
+            <button id="customModalCloseBtn" style="position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,0.08);color:#6b7280;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;" aria-label="Close">&times;</button>
+            <div style="font-size:40px;margin-bottom:8px;">🎂</div>
+            <div style="font-size:18px;font-weight:700;color:#1f2937;margin-bottom:4px;">Active Custom Order</div>
+            <div style="font-size:13px;color:#6b7280;">You already have an active custom cake order.</div>
+        </div>
+        <div style="padding:20px 24px;">
+            <div style="background:#f9fafb;border:1px solid #f0ebe4;border-radius:12px;padding:16px;margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <span style="font-size:15px;font-weight:700;color:#1f2937;">Order #BF-${orderId}</span>
+                    <span style="font-size:11px;font-weight:600;color:${statusColor};background:${statusBg};padding:3px 10px;border-radius:20px;">${statusLabel}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:#6b7280;">
+                    <span>Items: ${totalItems}</span>
+                    <span style="font-weight:600;color:#1f2937;">Total: Ks ${Number(totalAmount).toFixed(2)}</span>
+                </div>
+            </div>
+            ${paymentBanner}
+            <p style="font-size:13px;color:#6b7280;line-height:1.6;margin:0 0 16px;">Please wait until your current custom cake order is completed or cancelled before placing a new one.</p>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <a href="/order/${orderId}${!hasProof && !paymentStatus ? '?pay=scan' : ''}" style="display:block;text-align:center;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#D8A35D,#F4C27F);color:#fff;font-weight:700;font-size:14px;text-decoration:none;box-shadow:0 2px 8px rgba(216,163,93,0.3);">${!hasProof && !paymentStatus ? 'Pay Now' : 'View Order'} #BF-${orderId}</a>
+                <button id="customDismissBtn" style="padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#6b7280;font-weight:600;font-size:13px;cursor:pointer;">OK</button>
+            </div>
+        </div>
+    `;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    const cleanup = () => { try { document.body.removeChild(overlay); } catch(e){} };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+    dialog.querySelector('#customModalCloseBtn').addEventListener('click', cleanup);
+    dialog.querySelector('#customDismissBtn').addEventListener('click', cleanup);
+}
+
+// ─── Scheduled Order Active Modal ──────────────────────────────
+function showActiveScheduledOrderAlert(responseData) {
+    const orderId = responseData.order_id;
+    const totalItems = responseData.total_items || 0;
+    const totalAmount = responseData.total_amount || 0;
+    const orderStatus = responseData.order_status || 'scheduled';
+    const paymentStatus = responseData.payment_status || '';
+    const hasProof = responseData.has_proof === true;
+
+    const statusLabel = orderStatus === 'preparing' ? 'Being Prepared'
+        : orderStatus === 'ready' ? 'Ready for Pickup/Delivery'
+        : orderStatus === 'pending' ? 'Awaiting Confirmation'
+        : orderStatus === 'scheduled' ? 'Scheduled'
+        : orderStatus === 'pending_payment' ? 'Awaiting Payment'
+        : orderStatus === 'pending_verification' ? 'Payment Verifying'
+        : 'Processing';
+    const statusColor = orderStatus === 'preparing' ? '#2563EB'
+        : orderStatus === 'ready' ? '#059669'
+        : orderStatus === 'pending' ? '#D97706'
+        : '#7C3AED';
+    const statusBg = orderStatus === 'preparing' ? '#DBEAFE'
+        : orderStatus === 'ready' ? '#D1FAE5'
+        : orderStatus === 'pending' ? '#FEF3C7'
+        : '#EDE9FE';
+
+    // Payment status banner
+    let paymentBanner = '';
+    if (hasProof && paymentStatus === 'pending') {
+        paymentBanner = `
+            <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                <span style="font-size:22px;">⏳</span>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#92400E;">Payment Pending Verification</div>
+                    <div style="font-size:12px;color:#A16207;margin-top:2px;">You've already paid. Admin is reviewing your payment.</div>
+                </div>
+            </div>`;
+    } else if (paymentStatus === 'verified') {
+        paymentBanner = `
+            <div style="background:#D1FAE5;border:1px solid #A7F3D0;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                <span style="font-size:22px;">✅</span>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#065F46;">Payment Verified</div>
+                    <div style="font-size:12px;color:#047857;margin-top:2px;">Your payment has been confirmed.</div>
+                </div>
+            </div>`;
+    } else if (!hasProof && !paymentStatus) {
+        paymentBanner = `
+            <div style="background:#FEE2E2;border:1px solid #FECACA;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                <span style="font-size:22px;">💳</span>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#991B1B;">Payment Required</div>
+                    <div style="font-size:12px;color:#B91C1C;margin-top:2px;">Please complete your payment for this order first.</div>
+                </div>
+            </div>`;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.18);width:min(92vw,400px);overflow:hidden;position:relative;';
+    dialog.innerHTML = `
+        <div style="background:linear-gradient(135deg,#EDE9FE,#DDD6FE);padding:24px;text-align:center;position:relative;">
+            <button id="schedModalCloseBtn" style="position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,0.08);color:#6b7280;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;" aria-label="Close">&times;</button>
+            <div style="font-size:40px;margin-bottom:8px;">⏰</div>
+            <div style="font-size:18px;font-weight:700;color:#1f2937;margin-bottom:4px;">Active Scheduled Order</div>
+            <div style="font-size:13px;color:#6b7280;">You already have an active scheduled order.</div>
+        </div>
+        <div style="padding:20px 24px;">
+            <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <span style="font-size:15px;font-weight:700;color:#1f2937;">Order #BF-${orderId}</span>
+                    <span style="font-size:11px;font-weight:600;color:${statusColor};background:${statusBg};padding:3px 10px;border-radius:20px;">${statusLabel}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:13px;color:#6b7280;">
+                    <span>Items: ${totalItems}</span>
+                    <span style="font-weight:600;color:#1f2937;">Total: Ks ${Number(totalAmount).toFixed(2)}</span>
+                </div>
+            </div>
+            ${paymentBanner}
+            <p style="font-size:13px;color:#6b7280;line-height:1.6;margin:0 0 16px;">Please wait until your current scheduled order is completed or cancelled before placing a new one.</p>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <a href="/order/${orderId}${!hasProof && !paymentStatus ? '?pay=scan' : ''}" style="display:block;text-align:center;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#7C3AED,#8B5CF6);color:#fff;font-weight:700;font-size:14px;text-decoration:none;box-shadow:0 2px 8px rgba(124,58,237,0.3);">${!hasProof && !paymentStatus ? 'Pay Now' : 'View Order'} #BF-${orderId}</a>
+                <button id="schedDismissBtn" style="padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#6b7280;font-weight:600;font-size:13px;cursor:pointer;">OK</button>
+            </div>
+        </div>
+    `;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    const escHandler = (e) => { if (e.key === 'Escape') cleanup(); };
+    const cleanup = () => {
+        document.removeEventListener('keydown', escHandler);
+        try { document.body.removeChild(overlay); } catch(e){}
+    };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+    dialog.querySelector('#schedModalCloseBtn').addEventListener('click', cleanup);
+    dialog.querySelector('#schedDismissBtn').addEventListener('click', cleanup);
+    document.addEventListener('keydown', escHandler);
+}
+
+// ─── COD (Cash on Delivery) Active Order Modal ───────────────────
+function showActiveCODOrderAlert(responseData, currentOrderData, name, phone) {
+    const orderId = responseData.order_id;
+    const totalItems = responseData.total_items || 0;
+    const totalAmount = responseData.total_amount || 0;
+    const orderStatus = responseData.order_status || 'pending';
+    const editable = responseData.editable === true;
+
+    const statusLabel = orderStatus === 'preparing' ? 'Being Prepared'
+        : orderStatus === 'ready' ? 'Ready for Pickup/Delivery'
+        : 'Awaiting Confirmation';
+    const statusColor = orderStatus === 'preparing' ? '#2563EB'
+        : orderStatus === 'ready' ? '#059669'
+        : '#D97706';
+    const statusBg = orderStatus === 'preparing' ? '#DBEAFE'
+        : orderStatus === 'ready' ? '#D1FAE5'
+        : '#FEF3C7';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.35);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.18);width:min(92vw,400px);overflow:hidden;position:relative;';
+
+    if (editable) {
+        // PENDING — user can edit the existing order
+        dialog.innerHTML = `
+            <div style="background:linear-gradient(135deg,#FFF4EA,#FFECD2);padding:24px;text-align:center;position:relative;">
+                <button id="codModalCloseBtn" style="position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,0.08);color:#6b7280;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;" aria-label="Close">&times;</button>
+                <div style="width:48px;height:48px;border-radius:50%;background:#fff;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;box-shadow:0 2px 8px rgba(216,163,93,0.2);">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D8A35D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+                </div>
+                <div style="font-size:18px;font-weight:700;color:#1f2937;margin-bottom:4px;">Active Cash Order</div>
+                <div style="font-size:13px;color:#6b7280;">You already have a pending cash order.</div>
+            </div>
+            <div style="padding:20px 24px;">
+                <div style="background:#f9fafb;border:1px solid #f0ebe4;border-radius:12px;padding:16px;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <span style="font-size:15px;font-weight:700;color:#1f2937;">Order #BF-${orderId}</span>
+                        <span style="font-size:11px;font-weight:600;color:${statusColor};background:${statusBg};padding:3px 10px;border-radius:20px;">${statusLabel}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:13px;color:#6b7280;">
+                        <span>Items: ${totalItems}</span>
+                        <span style="font-weight:600;color:#1f2937;">Total: Ks ${Number(totalAmount).toFixed(2)}</span>
+                    </div>
+                </div>
+                <div style="background:#FEF9F0;border:1px solid #F3E8D5;border-radius:10px;padding:12px 14px;margin-bottom:16px;display:flex;align-items:flex-start;gap:8px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D8A35D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                    <span style="font-size:12px;color:#92400e;line-height:1.4;">Your new items will be <strong>added to this order</strong>. The total will be recalculated.</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    <button id="codEditOrderBtn" style="padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#D8A35D,#F4C27F);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 2px 8px rgba(216,163,93,0.3);transition:all 0.15s;">Add Items to This Order</button>
+                    <button id="codViewOrderBtn" style="padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#374151;font-weight:600;font-size:13px;cursor:pointer;transition:all 0.15s;">View Order Details</button>
+                </div>
+            </div>
+        `;
+    } else {
+        // PREPARING or READY — locked, cannot edit
+        dialog.innerHTML = `
+            <div style="background:linear-gradient(135deg,#EFF6FF,#DBEAFE);padding:24px;text-align:center;position:relative;">
+                <button id="codModalCloseBtn" style="position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,0.08);color:#6b7280;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;" aria-label="Close">&times;</button>
+                <div style="width:48px;height:48px;border-radius:50%;background:#fff;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;box-shadow:0 2px 8px rgba(37,99,235,0.15);">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div style="font-size:18px;font-weight:700;color:#1f2937;margin-bottom:4px;">Order In Progress</div>
+                <div style="font-size:13px;color:#6b7280;">Your current order cannot be modified.</div>
+            </div>
+            <div style="padding:20px 24px;">
+                <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <span style="font-size:15px;font-weight:700;color:#1f2937;">Order #BF-${orderId}</span>
+                        <span style="font-size:11px;font-weight:600;color:${statusColor};background:${statusBg};padding:3px 10px;border-radius:20px;">${statusLabel}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:13px;color:#6b7280;">
+                        <span>Items: ${totalItems}</span>
+                        <span style="font-weight:600;color:#1f2937;">Total: Ks ${Number(totalAmount).toFixed(2)}</span>
+                    </div>
+                </div>
+                <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 14px;margin-bottom:16px;display:flex;align-items:flex-start;gap:8px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <span style="font-size:12px;color:#991B1B;line-height:1.4;">This order is <strong>${orderStatus === 'ready' ? 'ready for delivery' : 'being prepared'}</strong> and can no longer be changed. Please wait for it to complete before placing a new order.</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    <button id="codViewOrderBtn" style="padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#3B82F6,#2563EB);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 2px 8px rgba(37,99,235,0.3);transition:all 0.15s;">View Order Details</button>
+                    <button id="codDismissBtn" style="padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#374151;font-weight:600;font-size:13px;cursor:pointer;transition:all 0.15s;">OK, Got It</button>
+                </div>
+            </div>
+        `;
+    }
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const escHandler = (e) => { if (e.key === 'Escape') cleanup(); };
+    const cleanup = () => {
+        document.removeEventListener('keydown', escHandler);
+        try { document.body.removeChild(overlay); } catch(e){}
+    };
+
+    // Close X button
+    dialog.querySelector('#codModalCloseBtn').addEventListener('click', () => { cleanup(); });
+    // Click outside
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+    // ESC key
+    document.addEventListener('keydown', escHandler);
+
+    // View Order → redirect to order detail
+    dialog.querySelector('#codViewOrderBtn').addEventListener('click', () => {
+        cleanup();
+        window.location.href = `/order/${orderId}`;
+    });
+
+    if (editable) {
+        // Add Items → merge items into existing order via order choice API
+        dialog.querySelector('#codEditOrderBtn').addEventListener('click', () => {
+            cleanup();
+            sendOrderChoice('add_to_existing', orderId, currentOrderData, name, phone);
+        });
+    } else {
+        // Dismiss button for locked orders
+        const dismissBtn = dialog.querySelector('#codDismissBtn');
+        if (dismissBtn) dismissBtn.addEventListener('click', () => { cleanup(); });
     }
 }
 
@@ -801,87 +1268,18 @@ async function submitPreorder(preorder) {
         delivery_directions: document.getElementById('deliveryDirections')?.value.trim() || ''
     };
 
-    try {
-        const method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
-        if (!method) { resetPreorderSubmitButton(); return; }
-        window.__preferredPayMethod = method;
-    } catch (e) {
-        window.__preferredPayMethod = 'cash';
-    }
-    orderData.payment_method = window.__preferredPayMethod || 'cash';
-
-    isSubmittingPreorder = true;
-    const btn = document.getElementById('preorderSubmitBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span> Placing order...';
-    }
-
-    const endpoint = tok ? (`/api/chat/orders?t=${encodeURIComponent(tok)}`) : '/api/chat/orders';
-
-    try {
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(orderData)
-        });
-
-        const text = await res.text();
-        let data = null;
-        try {
-            data = JSON.parse(text);
-        } catch (e) {
-            data = { success: false, message: text };
-        }
-
-        if (data && data.action === 'existing_custom_order') {
-            showCustomOrderChoiceDialog(data, orderData, name, phone);
-            resetPreorderSubmitButton();
-            return;
-        }
-
-        if (data && data.action === 'ask_user_choice') {
-            showOrderChoiceDialog(data, orderData, name, phone);
-            resetPreorderSubmitButton();
-            return;
-        }
-
-        if (res.ok && data && data.success) {
-            let whenLabel = '';
-            try {
-                const when = new Date(`${schedule.date}T${schedule.time}:00`);
-                whenLabel = Number.isNaN(when.getTime())
-                    ? `${schedule.date} ${schedule.time}`
-                    : when.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            } catch (e) {
-                whenLabel = `${schedule.date} ${schedule.time}`;
-            }
-            showToast(`Custom cake order #${data.order_id} placed! Ready by ${whenLabel}`, 'success');
-            try {
-                window.setPendingSchedule && window.setPendingSchedule(null);
-                localStorage.removeItem(`pending_schedule_${getUserId()}`);
-            } catch (e) { }
-            if (typeof closeSheets === 'function') closeSheets();
-            window.pendingPreorderDraft = null;
-
-            const payMethod = (window.__preferredPayMethod === 'scan') ? 'scan' : 'cash';
-            const payUrl = payMethod === 'scan'
-                ? `/order/${data.order_id}?pay=scan`
-                : `/order/${data.order_id}`;
-            window.location.href = payUrl;
-            return;
-        }
-
-        if (data && data.error) {
-            showToast(data.message || 'Order failed', 'error');
-        } else {
-            showToast('Order failed: ' + (data?.message || 'Unknown error'), 'error');
-        }
-        resetPreorderSubmitButton();
-    } catch (err) {
-        showToast('Network error. Please try again.', 'error');
-        resetPreorderSubmitButton();
-    }
+    // Route through submitPreorderDirect (creates normal order with forced scan payment)
+    await submitPreorderDirect({
+        product: selectedProduct,
+        size, layers, cream,
+        message: cakeMessage,
+        notes,
+        schedule,
+        customerName: name,
+        customerPhone: phone,
+        deliveryType,
+        address: deliveryType === 'delivery' ? address : 'Pickup at store',
+    });
 }
 
 function resetOrder() {
@@ -1010,35 +1408,30 @@ async function submitPreorderDirect(opts) {
         allNotes.push(itemNote);
     }
 
+    // ── Custom cakes: scan only, no COD ──
+    isSubmittingPreorder = true;
+    const btn = document.getElementById('preorderSubmitBtn');
+    const btnText = document.getElementById('preorderSubmitText');
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.textContent = 'Placing Order...';
+
     const orderData = {
         user_id: userId,
         items,
         channel: 'messenger',
-        order_type: 'custom',
         customer_name: name,
         customer_phone: phone,
         delivery_type: deliveryType,
         address: address,
         notes: `Custom cake order\n\n${allNotes.join('\n\n')}`,
-        schedule,
+        schedule: { date: schedule.date, time: schedule.time },
+        payment_method: 'scan',
+        order_type: 'custom',
+        geo: window.getGeo ? window.getGeo() : null,
+        delivery_directions: document.getElementById('deliveryDirections')?.value.trim() || ''
     };
 
-    try {
-        const method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
-        if (!method) { resetPreorderSubmitButton(); return; }
-        window.__preferredPayMethod = method;
-    } catch (e) {
-        window.__preferredPayMethod = 'cash';
-    }
-    orderData.payment_method = window.__preferredPayMethod || 'cash';
-
-    isSubmittingPreorder = true;
-    const btn = document.getElementById('preorderSubmitBtn');
-    const btnText = document.getElementById('preorderSubmitText');
-    if (btn) btn.disabled = true;
-    if (btnText) btnText.textContent = 'Placing order...';
-
-    const endpoint = tok ? (`/api/chat/orders?t=${encodeURIComponent(tok)}`) : '/api/chat/orders';
+    const endpoint = tok ? `/api/chat/orders?t=${encodeURIComponent(tok)}` : '/api/chat/orders';
 
     try {
         const res = await fetch(endpoint, {
@@ -1047,9 +1440,7 @@ async function submitPreorderDirect(opts) {
             body: JSON.stringify(orderData)
         });
 
-        const text = await res.text();
-        let data = null;
-        try { data = JSON.parse(text); } catch (e) { data = { success: false, message: text }; }
+        const data = await res.json().catch(() => ({ success: false, message: 'Invalid response' }));
 
         if (data && data.action === 'ask_user_choice') {
             showOrderChoiceDialog(data, orderData, name, phone);
@@ -1057,62 +1448,20 @@ async function submitPreorderDirect(opts) {
             return;
         }
 
-        if (data && data.action === 'existing_custom_order') {
-            showCustomOrderChoiceDialog(data, orderData, name, phone);
-            resetPreorderSubmitButton();
-            return;
-        }
-
         if (res.ok && data && data.success) {
-            let whenLabel = '';
-            try {
-                const when = new Date(`${schedule.date}T${schedule.time}:00`);
-                whenLabel = Number.isNaN(when.getTime())
-                    ? `${schedule.date} ${schedule.time}`
-                    : when.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            } catch (e) {
-                whenLabel = `${schedule.date} ${schedule.time}`;
-            }
-            showToast(`Custom cake order #${data.order_id} placed! Ready by ${whenLabel}`, 'success');
-
-            const payMethod = (window.__preferredPayMethod === 'scan') ? 'scan' : 'cash';
-            const paymentStatus = payMethod === 'scan' ? 'Scan to pay' : 'Pay by cash';
-            // Store invoice data for receipt page
-            const invoiceData = {
-                order_id: data.order_id,
-                created_at: new Date().toISOString(),
-                customer_name: name,
-                customer_phone: phone,
-                address: address,
-                delivery_type: deliveryType === 'pickup' ? 'Pick Up' : 'Delivery',
-                payment_status: paymentStatus,
-                subtotal: totalPrice,
-                discount: 0,
-                delivery_fee: 0,
-                total: totalPrice,
-                promotions: [],
-                items: items.map(it => ({ name: it.name, qty: it.qty, price: it.price, line_total: it.price * it.qty }))
-            };
-            try {
-                localStorage.setItem(`bf_invoice_${data.order_id}`, JSON.stringify(invoiceData));
-            } catch (e) { }
-            // Also store under a known key so the receipt page can always find it
-            try {
-                localStorage.setItem('bf_invoice_latest', JSON.stringify(invoiceData));
-            } catch (e) { }
-
+            showToast(`Order #${data.order_id} placed! 🎂`, 'success');
             if (typeof closeSheets === 'function') closeSheets();
-
-            window.location.href = `/order/${data.order_id}?pay=${encodeURIComponent(payMethod)}`;
-            return;
-        }
-
-        if (data && data.error) {
-            showError(data.message || 'Order failed');
+            window.location.href = `/order/${data.order_id}?pay=scan`;
         } else {
-            showError('Order failed: ' + (data?.message || 'Unknown error'));
+            if (data && data.error === 'pending_qr_payment') {
+                showPendingQRPaymentAlert(data, orderData);
+            } else if (data && data.error === 'active_custom_order') {
+                showActiveCustomOrderAlert(data);
+            } else {
+                showError(data.message || 'Order failed. Please try again.');
+            }
+            resetPreorderSubmitButton();
         }
-        resetPreorderSubmitButton();
     } catch (err) {
         showError('Network error. Please try again.');
         resetPreorderSubmitButton();

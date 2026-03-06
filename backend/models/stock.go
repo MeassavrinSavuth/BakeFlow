@@ -105,14 +105,19 @@ func GetProductStockStatus(productID int) (*ProductStock, error) {
 	var ps ProductStock
 	var reserved sql.NullInt64
 
-	err := configs.DB.QueryRow(`
+	err := configs.QueryRowRetry(`
 		SELECT id, name, stock, COALESCE(reserved_stock, 0)
 		FROM products
 		WHERE id = $1 AND deleted_at IS NULL
 	`, productID).Scan(&ps.ProductID, &ps.ProductName, &ps.TotalStock, &reserved)
 
 	if err != nil {
-		return nil, err
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrProductNotFound
+		}
+		// DB connection / query error — not a missing product
+		log.Printf("❌ DB error checking stock for product %d: %v", productID, err)
+		return nil, fmt.Errorf("database error: %w", err)
 	}
 
 	ps.ReservedStock = int(reserved.Int64)

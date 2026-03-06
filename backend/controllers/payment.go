@@ -89,6 +89,32 @@ func UploadPaymentImageHandler(w http.ResponseWriter, r *http.Request) {
 	orderIDStr := r.FormValue("order_id")
 	orderID, _ := strconv.Atoi(orderIDStr)
 
+	// Check if order is expired or cancelled — block upload
+	var currentOrderStatus string
+	if err := configs.DB.QueryRow("SELECT status FROM orders WHERE id = $1", orderID).Scan(&currentOrderStatus); err == nil {
+		normalized := strings.ToLower(strings.TrimSpace(currentOrderStatus))
+		if normalized == "expired" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "order_expired",
+				"message": "This order has expired. Please create a new order.",
+			})
+			return
+		}
+		if normalized == "cancelled" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "order_cancelled",
+				"message": "This order has been cancelled.",
+			})
+			return
+		}
+	}
+
 	// --- Upload to Cloudinary ---
 	cloudName := os.Getenv("CLOUDINARY_CLOUD_NAME")
 	apiKey := os.Getenv("CLOUDINARY_API_KEY")
@@ -143,6 +169,9 @@ func UploadPaymentImageHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("⚠️ Failed to insert payment record: %v", err)
 	}
 
+	// Update order status to pending_verification
+	_, _ = configs.DB.Exec(`UPDATE orders SET status = 'pending_verification' WHERE id = $1 AND status IN ('pending_payment', 'pending')`, orderID)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -173,6 +202,17 @@ func GetPaymentStatusHandler(w http.ResponseWriter, r *http.Request) {
 		response["proof_url"] = proofURL.String
 	}
 
+	// Check if order itself is expired or cancelled (overrides payment status)
+	var orderStatus string
+	if err := configs.DB.QueryRow("SELECT status FROM orders WHERE id = $1", orderID).Scan(&orderStatus); err == nil {
+		normalized := strings.ToLower(strings.TrimSpace(orderStatus))
+		if normalized == "expired" {
+			response["status"] = "expired"
+		} else if normalized == "cancelled" {
+			response["status"] = "cancelled"
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -188,7 +228,7 @@ func AdminGetPayments(w http.ResponseWriter, r *http.Request) {
 	var args []interface{}
 
 	if status != "" {
-		query += " WHERE (status::text = $1 OR status::text = '{' || $1 || '}')"
+		query += " WHERE status = $1"
 		args = append(args, status)
 	}
 
@@ -289,6 +329,15 @@ func AdminVerifyPayment(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			// Update order status
 			_, _ = tx.Exec("UPDATE orders SET status = 'confirmed' WHERE id = $1", orderID)
+		}
+	}
+
+	// If rejected, reset order status so user can re-upload
+	if req.Status == "rejected" {
+		var rejOrderID int
+		err := tx.QueryRow("SELECT order_id FROM payments WHERE id = $1", paymentID).Scan(&rejOrderID)
+		if err == nil {
+			_, _ = tx.Exec("UPDATE orders SET status = 'pending_payment' WHERE id = $1 AND status = 'pending_verification'", rejOrderID)
 		}
 	}
 

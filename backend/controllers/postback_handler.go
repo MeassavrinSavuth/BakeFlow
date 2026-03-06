@@ -230,6 +230,12 @@ func handlePostback(userID, payload string) {
 			}
 		}
 
+		// View cart for a specific order (VIEW_CART_123)
+		if strings.HasPrefix(payload, "VIEW_CART_") {
+			ShowWebviewOrderForm(userID)
+			return
+		}
+
 		// Track specific order by ID (TRACK_ORDER_123)
 		if strings.HasPrefix(payload, "TRACK_ORDER_") {
 			orderIDStr := strings.TrimPrefix(payload, "TRACK_ORDER_")

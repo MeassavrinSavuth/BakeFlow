@@ -5,12 +5,16 @@ import (
 	"bakeflow/models"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gorilla/mux"
 )
 
 type ChatOrderSchedule struct {
@@ -92,6 +96,10 @@ func getOrderType(req *ChatOrderRequest) OrderType {
 		if item.ProductID > 0 && requiresAdvanceNotice(item.ProductID) {
 			return OrderTypeCustom
 		}
+		// Also detect custom cakes by item name (e.g. "Chocolate Rich Cake — Custom (8)")
+		if strings.Contains(strings.ToLower(item.Name), "custom") {
+			return OrderTypeCustom
+		}
 	}
 
 	// Check if scheduled for future delivery
@@ -100,7 +108,7 @@ func getOrderType(req *ChatOrderRequest) OrderType {
 		timeStr := strings.TrimSpace(req.Schedule.Time)
 		if dateStr != "" && timeStr != "" {
 			if t, err := time.Parse("2006-01-02T15:04:05", dateStr+"T"+timeStr+":00"); err == nil {
-				if t.After(time.Now().Add(2 * time.Hour)) {
+				if t.After(time.Now()) {
 					return OrderTypeScheduled
 				}
 			}
@@ -170,6 +178,97 @@ func getLatestPaymentInfo(orderID int) (string, string, bool) {
 		return "", "", false
 	}
 	return strings.ToLower(strings.TrimSpace(method.String)), strings.ToLower(strings.TrimSpace(status.String)), true
+}
+
+// CancelPendingQROrder allows a user to cancel their own pending_payment order
+func CancelPendingQROrder(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	orderIDStr := vars["id"]
+	orderID, _ := strconv.Atoi(orderIDStr)
+
+	// Auth: token or user_id
+	tok := strings.TrimSpace(r.URL.Query().Get("t"))
+	psid := ""
+	if tok != "" {
+		if verified, errTok := VerifyWebviewToken(tok); errTok == nil {
+			psid = verified
+		}
+	}
+	if psid == "" {
+		var body struct {
+			UserID string `json:"user_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if isValidMessengerRecipientID(body.UserID) {
+			psid = body.UserID
+		}
+	}
+	if psid == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Verify ownership and status
+	var ownerID, status string
+	err := configs.DB.QueryRow("SELECT COALESCE(sender_id,''), status FROM orders WHERE id = $1", orderID).Scan(&ownerID, &status)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Order not found"})
+		return
+	}
+	if strings.TrimSpace(ownerID) != strings.TrimSpace(psid) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "You can only cancel your own orders."})
+		return
+	}
+	normalizedStatus := strings.ToLower(strings.TrimSpace(status))
+	if normalizedStatus != "pending_payment" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Only pending payment orders can be cancelled."})
+		return
+	}
+
+	// Cancel the order and restore stock
+	_, err = configs.DB.Exec("UPDATE orders SET status = 'cancelled' WHERE id = $1", orderID)
+	if err != nil {
+		log.Printf("❌ Failed to cancel QR order #%d: %v", orderID, err)
+		http.Error(w, "failed to cancel order", http.StatusInternalServerError)
+		return
+	}
+
+	// Restore reserved stock
+	items, _ := models.GetOrderItems(orderID)
+	for _, item := range items {
+		var productID int
+		err := configs.DB.QueryRow("SELECT id FROM products WHERE name = $1 AND deleted_at IS NULL LIMIT 1", item.Product).Scan(&productID)
+		if err == nil && productID > 0 {
+			_ = models.RestoreStock(productID, item.Quantity, orderID, "QR order cancelled by user")
+		}
+	}
+
+	log.Printf("🗑️ QR order #%d cancelled by user %s", orderID, psid)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": fmt.Sprintf("Order #%d cancelled.", orderID)})
+}
+
+// expireOldQROrders expires unpaid QR orders older than 2 hours with no payment record
+func expireOldQROrders(userID string) {
+	result, err := configs.DB.Exec(`
+		UPDATE orders
+		SET status = 'expired'
+		WHERE sender_id = $1
+		  AND status = 'pending_payment'
+		  AND created_at < NOW() - INTERVAL '2 hours'
+		  AND id NOT IN (SELECT DISTINCT order_id FROM payments)
+	`, userID)
+	if err != nil {
+		log.Printf("⚠️ Failed to expire old QR orders for user %s: %v", userID, err)
+	} else if n, _ := result.RowsAffected(); n > 0 {
+		log.Printf("🕐 Expired %d old QR order(s) for user %s", n, userID)
+	}
 }
 
 // canCreateOrder validates if a user can place a new order (simple Food Panda-style rules)
@@ -360,7 +459,7 @@ func updateCustomOrder(w http.ResponseWriter, userID string, req OrderChoiceRequ
 	}
 
 	status := strings.ToLower(strings.TrimSpace(existingOrder.Status))
-	if status != "pending" && status != "scheduled" {
+	if status != "pending" && status != "scheduled" && status != "pending_payment" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -384,9 +483,9 @@ func updateCustomOrder(w http.ResponseWriter, userID string, req OrderChoiceRequ
 	totalItems := 0
 	for _, item := range req.Items {
 		_, err = configs.DB.Exec(`
-			INSERT INTO order_items (order_id, product, quantity, price, note, image_url, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, NOW())
-		`, orderID, item.Name, item.Qty, item.Price, item.Note, item.ImageURL)
+			INSERT INTO order_items (order_id, product, quantity, price, note, image_url, product_id, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, 0), NOW())
+		`, orderID, item.Name, item.Qty, item.Price, item.Note, item.ImageURL, item.ProductID)
 		if err != nil {
 			log.Printf("⚠️  updateCustomOrder: failed to insert item %s: %v", item.Name, err)
 		}
@@ -563,7 +662,7 @@ func addItemsToExistingOrder(w http.ResponseWriter, userID string, orderID int, 
 		return
 	}
 	// Allow adding to pending/confirmed orders, and scheduled custom orders
-	allowModify := status == "pending" || status == "confirmed"
+	allowModify := status == "pending" || status == "confirmed" || status == "pending_payment"
 	if status == "scheduled" && isCustomOrder(orderID) {
 		allowModify = true
 	}
@@ -622,9 +721,9 @@ func addItemsToExistingOrder(w http.ResponseWriter, userID string, orderID int, 
 		} else {
 			// New product - insert as new item
 			_, err = configs.DB.Exec(`
-				INSERT INTO order_items (order_id, product, quantity, price, note, image_url, created_at)
-				VALUES ($1, $2, $3, $4, $5, $6, NOW())
-			`, orderID, newItem.Name, newItem.Qty, newItem.Price, newItem.Note, newItem.ImageURL)
+				INSERT INTO order_items (order_id, product, quantity, price, note, image_url, product_id, created_at)
+				VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, 0), NOW())
+			`, orderID, newItem.Name, newItem.Qty, newItem.Price, newItem.Note, newItem.ImageURL, newItem.ProductID)
 
 			if err != nil {
 				log.Printf("⚠️  Failed to insert item %s: %v", newItem.Name, err)
@@ -796,9 +895,9 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 	// Insert order items
 	for _, item := range req.Items {
 		_, err = configs.DB.Exec(`
-			INSERT INTO order_items (order_id, product, quantity, price, note, image_url, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, NOW())
-		`, orderID, item.Name, item.Qty, item.Price, item.Note, item.ImageURL)
+			INSERT INTO order_items (order_id, product, quantity, price, note, image_url, product_id, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, 0), NOW())
+		`, orderID, item.Name, item.Qty, item.Price, item.Note, item.ImageURL, item.ProductID)
 
 		if err != nil {
 			log.Printf("⚠️  Failed to insert item %s: %v", item.Name, err)
@@ -857,15 +956,26 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 
 		// Combined confirmation card with all options
 		frontendURL := resolveFrontendBaseURL()
-
-		paymentLink := fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
-
 		title := "✅ Order Confirmed"
-		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f\n\nReady to pay? Tap Pay Now below", orderID, itemSummary, subtotal)
-		buttons := []Button{
-			{Type: "web_url", Title: "💳 Pay Now", URL: paymentLink},
-			{Type: "postback", Title: "📍 Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", orderID)},
-			{Type: "postback", Title: "❓ Need Help?", Payload: "CONTACT_SUPPORT"},
+
+		pmChoice := strings.ToLower(strings.TrimSpace(req.PaymentMethod))
+		var buttons []Button
+		var subtitle string
+
+		if pmChoice == "scan" {
+			paymentLink := fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
+			subtitle = fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f", orderID, itemSummary, subtotal)
+			buttons = []Button{
+				{Type: "web_url", Title: "Pay Now", URL: paymentLink},
+				{Type: "postback", Title: "Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", orderID)},
+				{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"},
+			}
+		} else {
+			subtitle = fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f\n\nPayment: Cash on Delivery. Please prepare exact amount.", orderID, itemSummary, subtotal)
+			buttons = []Button{
+				{Type: "postback", Title: "Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", orderID)},
+				{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"},
+			}
 		}
 		_ = SendOrderCardWithTag(userID, orderID, title, subtitle, productImage, buttons, "POST_PURCHASE_UPDATE")
 
@@ -960,13 +1070,25 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 		if item.ProductID > 0 {
 			stockStatus, err := models.GetProductStockStatus(item.ProductID)
 			if err != nil {
-				log.Printf("⚠️ Product %d not found or inactive", item.ProductID)
+				if errors.Is(err, models.ErrProductNotFound) {
+					log.Printf("⚠️ Product %d not found or inactive", item.ProductID)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success": false,
+						"error":   "product_unavailable",
+						"message": fmt.Sprintf("%s is no longer available", item.Name),
+					})
+					return
+				}
+				// DB error (Neon cold start, connection issue)
+				log.Printf("❌ DB error checking stock for product %d: %v", item.ProductID, err)
 				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
+				w.WriteHeader(http.StatusServiceUnavailable)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"success": false,
-					"error":   "product_unavailable",
-					"message": fmt.Sprintf("%s is no longer available", item.Name),
+					"error":   "temporary_error",
+					"message": "Temporary connection issue, please try again",
 				})
 				return
 			}
@@ -1012,6 +1134,111 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 	orderTypeDetected := getOrderType(&req)
 	log.Printf("📋 [OrderType] Detected: %s for user %s", orderTypeDetected, userID)
 
+	// ─── Force scan payment for custom cake & scheduled orders (no COD) ──
+	if orderTypeDetected == OrderTypeCustom || orderTypeDetected == OrderTypeScheduled {
+		req.PaymentMethod = "scan"
+		log.Printf("📋 %s order for user %s — forced scan payment (no COD)", orderTypeDetected, userID)
+	}
+
+	// ─── Custom cake order guard (1 active at a time) ────────
+	if orderTypeDetected == OrderTypeCustom {
+
+		// Block if user already has an active custom cake order
+		var existingCustomID int
+		var existingCustomItems int
+		var existingCustomTotal float64
+		var existingCustomStatus string
+		customErr := configs.DB.QueryRow(`
+			SELECT o.id, COALESCE(o.total_items, 0), COALESCE(o.total_amount, 0), o.status FROM orders o
+			WHERE o.sender_id = $1
+			  AND o.status IN ('pending', 'scheduled', 'preparing', 'ready')
+			  AND (
+			    COALESCE(o.order_type, '') = 'custom'
+			    OR EXISTS (
+			      SELECT 1 FROM order_items oi
+			      WHERE oi.order_id = o.id AND LOWER(oi.product) LIKE '%custom%'
+			    )
+			  )
+			ORDER BY o.created_at DESC
+			LIMIT 1
+		`, userID).Scan(&existingCustomID, &existingCustomItems, &existingCustomTotal, &existingCustomStatus)
+		if customErr == nil && existingCustomID > 0 {
+			log.Printf("🚫 User %s blocked: active custom order #%d (status: %s)", userID, existingCustomID, existingCustomStatus)
+
+			// Check if payment proof was already uploaded for this order
+			var paymentStatus, paymentProof string
+			payErr := configs.DB.QueryRow(
+				"SELECT COALESCE(status, ''), COALESCE(proof_url, '') FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1",
+				existingCustomID,
+			).Scan(&paymentStatus, &paymentProof)
+			if payErr != nil {
+				paymentStatus = ""
+				paymentProof = ""
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":        false,
+				"error":          "active_custom_order",
+				"message":        "You already have an active custom cake order.",
+				"order_id":       existingCustomID,
+				"total_items":    existingCustomItems,
+				"total_amount":   existingCustomTotal,
+				"order_status":   existingCustomStatus,
+				"payment_status": paymentStatus,
+				"has_proof":      paymentProof != "",
+			})
+			return
+		}
+	}
+
+	// ─── Scheduled order guard (1 active at a time) ──────────
+	if orderTypeDetected == OrderTypeScheduled {
+		var existingSchedID int
+		var existingSchedItems int
+		var existingSchedTotal float64
+		var existingSchedStatus string
+		schedErr := configs.DB.QueryRow(`
+			SELECT o.id, COALESCE(o.total_items, 0), COALESCE(o.total_amount, 0), o.status FROM orders o
+			WHERE o.sender_id = $1
+			  AND o.status IN ('pending', 'scheduled', 'preparing', 'ready')
+			  AND COALESCE(o.order_type, '') = 'scheduled'
+			  AND COALESCE(o.order_type, '') != 'custom'
+			ORDER BY o.created_at DESC
+			LIMIT 1
+		`, userID).Scan(&existingSchedID, &existingSchedItems, &existingSchedTotal, &existingSchedStatus)
+		if schedErr == nil && existingSchedID > 0 {
+			log.Printf("🚫 User %s blocked: active scheduled order #%d (status: %s)", userID, existingSchedID, existingSchedStatus)
+
+			// Check payment status for existing scheduled order
+			var paymentStatus, paymentProof string
+			payErr := configs.DB.QueryRow(
+				"SELECT COALESCE(status, ''), COALESCE(proof_url, '') FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1",
+				existingSchedID,
+			).Scan(&paymentStatus, &paymentProof)
+			if payErr != nil {
+				paymentStatus = ""
+				paymentProof = ""
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":        false,
+				"error":          "active_scheduled_order",
+				"message":        "You already have an active scheduled order.",
+				"order_id":       existingSchedID,
+				"total_items":    existingSchedItems,
+				"total_amount":   existingSchedTotal,
+				"order_status":   existingSchedStatus,
+				"payment_status": paymentStatus,
+				"has_proof":      paymentProof != "",
+			})
+			return
+		}
+	}
+
 	// Calculate subtotal from items
 	subtotal := 0.0
 	var totalItems int
@@ -1039,8 +1266,78 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 		customerInfo += " (" + req.CustomerPhone + ")"
 	}
 
+	// ─── QR Anti-Spam Guard (skip custom & scheduled — they have dedicated guards above) ───
+	if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) == "scan" && orderTypeDetected != OrderTypeScheduled && orderTypeDetected != OrderTypeCustom {
+		// Expire old unpaid QR orders first
+		expireOldQROrders(userID)
+
+		// Check for existing active QR order
+		var existingQROrderID int
+		var existingQRItems int
+		var existingQRTotal float64
+		var existingQRStatus string
+		qrErr := configs.DB.QueryRow(`
+			SELECT id, COALESCE(total_items, 0), COALESCE(total_amount, 0), status FROM orders
+			WHERE sender_id = $1
+			  AND status IN ('pending_payment', 'pending_verification')
+			ORDER BY created_at DESC
+			LIMIT 1
+		`, userID).Scan(&existingQROrderID, &existingQRItems, &existingQRTotal, &existingQRStatus)
+		if qrErr == nil && existingQROrderID > 0 {
+			log.Printf("🚫 User %s blocked: existing QR order #%d (status: %s)", userID, existingQROrderID, existingQRStatus)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":      false,
+				"error":        "pending_qr_payment",
+				"message":      "You already have a pending QR payment order.",
+				"order_id":     existingQROrderID,
+				"total_items":  existingQRItems,
+				"total_amount": existingQRTotal,
+				"order_status": existingQRStatus,
+			})
+			return
+		}
+	}
+
+	// ─── COD Anti-Spam Guard (skip custom & scheduled — they're forced scan) ──
+	if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) != "scan" && orderTypeDetected != OrderTypeScheduled && orderTypeDetected != OrderTypeCustom {
+		// Check for existing active cash-on-delivery order
+		var existingCODID int
+		var existingCODItems int
+		var existingCODTotal float64
+		var existingCODStatus string
+		codErr := configs.DB.QueryRow(`
+			SELECT id, COALESCE(total_items, 0), COALESCE(total_amount, 0), status FROM orders
+			WHERE sender_id = $1
+			  AND COALESCE(payment_method, 'cash') = 'cash'
+			  AND status IN ('pending', 'preparing', 'ready')
+			ORDER BY created_at DESC
+			LIMIT 1
+		`, userID).Scan(&existingCODID, &existingCODItems, &existingCODTotal, &existingCODStatus)
+		if codErr == nil && existingCODID > 0 {
+			log.Printf("🚫 User %s blocked (COD): existing cash order #%d (status: %s)", userID, existingCODID, existingCODStatus)
+			// Determine if the order can be edited
+			editable := existingCODStatus == "pending"
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":      false,
+				"error":        "active_cod_order",
+				"message":      "You already have an active cash order.",
+				"order_id":     existingCODID,
+				"total_items":  existingCODItems,
+				"total_amount": existingCODTotal,
+				"order_status": existingCODStatus,
+				"editable":     editable,
+			})
+			return
+		}
+	}
+
 	// ─── Simplified Order Rules (Food App Style) ──────────────
-	if !req.ForceNewOrder {
+	// Scheduled orders are independent — skip all conflict checks
+	if !req.ForceNewOrder && orderTypeDetected != OrderTypeScheduled && orderTypeDetected != OrderTypeCustom {
 		canOrder, reason, modifiableOrders := canCreateOrder(userID, orderTypeDetected)
 		log.Printf("🔍 [OrderRules] Type: %s, CanOrder: %v, Reason: %s", orderTypeDetected, canOrder, reason)
 
@@ -1236,14 +1533,25 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("📦 Creating order for user %s with %d items", userID, len(req.Items))
+	// Override order status for scan payment orders
+	if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) == "scan" && orderStatus == "pending" {
+		orderStatus = "pending_payment"
+	}
+
+	log.Printf("📦 Creating order for user %s with %d items (status: %s)", userID, len(req.Items), orderStatus)
 
 	var orderID int
 
+	// Resolve payment method for DB storage
+	paymentMethodValue := "cash"
+	if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) == "scan" {
+		paymentMethodValue = "scan"
+	}
+
 	// New insert with promotion fields and order_type
 	insertWithPromotion := `
-		INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, promotion_id, discount, scheduled_for, schedule_type, order_type, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10, $11, $12, $13, NOW())
+		INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, promotion_id, discount, scheduled_for, schedule_type, order_type, payment_method, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
 		RETURNING id
 	`
 
@@ -1259,32 +1567,44 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 		RETURNING id
 	`
 
-	// Try insert with promotion columns first
-	err = configs.DB.QueryRow(insertWithPromotion, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, total, userID, promotionID, discount, scheduledFor, scheduleType, string(orderTypeDetected)).Scan(&orderID)
+	// Try insert with promotion columns first (includes payment_method)
+	err = configs.DB.QueryRow(insertWithPromotion, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, total, userID, promotionID, discount, scheduledFor, scheduleType, string(orderTypeDetected), paymentMethodValue).Scan(&orderID)
 	if err != nil {
 		// Backwards compatible fallback if DB columns aren't migrated yet.
 		msg := err.Error()
-		if strings.Contains(msg, "promotion_id") || strings.Contains(msg, "discount") {
-			// Try with scheduling columns
-			err = configs.DB.QueryRow(insertWithSchedule, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID, scheduledFor, scheduleType).Scan(&orderID)
-			if err != nil {
-				// Check for scheduling columns not existing
-				if strings.Contains(err.Error(), "scheduled_for") || strings.Contains(err.Error(), "schedule_type") {
-					// If the user attempted to schedule, don't silently drop scheduling.
-					if scheduledFor != nil {
-						http.Error(w, "Scheduling is not enabled on the database yet. Please apply migration 006_add_order_scheduling.sql", http.StatusBadRequest)
-						return
+		if strings.Contains(msg, "payment_method") {
+			// payment_method column doesn't exist yet — retry without it
+			insertWithPromotionNoPM := `
+				INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, promotion_id, discount, scheduled_for, schedule_type, order_type, created_at)
+				VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10, $11, $12, $13, NOW())
+				RETURNING id
+			`
+			err = configs.DB.QueryRow(insertWithPromotionNoPM, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, total, userID, promotionID, discount, scheduledFor, scheduleType, string(orderTypeDetected)).Scan(&orderID)
+		}
+		if err != nil {
+			msg = err.Error()
+			if strings.Contains(msg, "promotion_id") || strings.Contains(msg, "discount") {
+				// Try with scheduling columns
+				err = configs.DB.QueryRow(insertWithSchedule, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID, scheduledFor, scheduleType).Scan(&orderID)
+				if err != nil {
+					// Check for scheduling columns not existing
+					if strings.Contains(err.Error(), "scheduled_for") || strings.Contains(err.Error(), "schedule_type") {
+						// If the user attempted to schedule, don't silently drop scheduling.
+						if scheduledFor != nil {
+							http.Error(w, "Scheduling is not enabled on the database yet. Please apply migration 006_add_order_scheduling.sql", http.StatusBadRequest)
+							return
+						}
+						err = configs.DB.QueryRow(insertLegacy, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID).Scan(&orderID)
 					}
-					err = configs.DB.QueryRow(insertLegacy, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID).Scan(&orderID)
 				}
+			} else if strings.Contains(msg, "scheduled_for") || strings.Contains(msg, "schedule_type") {
+				// If the user attempted to schedule, don't silently drop scheduling.
+				if scheduledFor != nil {
+					http.Error(w, "Scheduling is not enabled on the database yet. Please apply migration 006_add_order_scheduling.sql", http.StatusBadRequest)
+					return
+				}
+				err = configs.DB.QueryRow(insertLegacy, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID).Scan(&orderID)
 			}
-		} else if strings.Contains(msg, "scheduled_for") || strings.Contains(msg, "schedule_type") {
-			// If the user attempted to schedule, don't silently drop scheduling.
-			if scheduledFor != nil {
-				http.Error(w, "Scheduling is not enabled on the database yet. Please apply migration 006_add_order_scheduling.sql", http.StatusBadRequest)
-				return
-			}
-			err = configs.DB.QueryRow(insertLegacy, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID).Scan(&orderID)
 		}
 	}
 
@@ -1302,9 +1622,9 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 	// This prevents race conditions where two users order the last item simultaneously
 	for _, item := range req.Items {
 		_, err = configs.DB.Exec(`
-			INSERT INTO order_items (order_id, product, quantity, price, note, image_url, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, NOW())
-		`, orderID, item.Name, item.Qty, item.Price, item.Note, item.ImageURL)
+			INSERT INTO order_items (order_id, product, quantity, price, note, image_url, product_id, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, 0), NOW())
+		`, orderID, item.Name, item.Qty, item.Price, item.Note, item.ImageURL, item.ProductID)
 
 		if err != nil {
 			log.Printf("⚠️  Failed to insert item %s: %v", item.Name, err)
@@ -1401,15 +1721,22 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[Order] Creating card with Track payload: %s", trackPayload)
 
 		frontendURL := resolveFrontendBaseURL()
+		pmVal := strings.ToLower(strings.TrimSpace(req.PaymentMethod))
 
-		payURL := fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
-		if strings.ToLower(strings.TrimSpace(req.PaymentMethod)) == "scan" {
-			payURL = fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
-		}
-		buttons := []Button{
-			{Type: "web_url", Title: "Pay Now", URL: payURL},
-			{Type: "postback", Title: "Track Order", Payload: trackPayload},
-			{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"},
+		var buttons []Button
+		if pmVal == "scan" {
+			payURL := fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
+			buttons = []Button{
+				{Type: "web_url", Title: "Pay Now", URL: payURL},
+				{Type: "postback", Title: "Track Order", Payload: trackPayload},
+				{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"},
+			}
+		} else {
+			subtitle += "\n\nPayment: Cash on Delivery. Please prepare exact amount."
+			buttons = []Button{
+				{Type: "postback", Title: "Track Order", Payload: trackPayload},
+				{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"},
+			}
 		}
 
 		// Send modern card with POST_PURCHASE_UPDATE tag

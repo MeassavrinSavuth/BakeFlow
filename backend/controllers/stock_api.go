@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -179,17 +181,23 @@ func ValidateCartStock(w http.ResponseWriter, r *http.Request) {
 	for _, item := range req.Items {
 		status, err := models.GetProductStockStatus(item.ProductID)
 		if err != nil {
-			// Product doesn't exist
-			response.Valid = false
-			response.Items = append(response.Items, ItemValidation{
-				ProductID:      item.ProductID,
-				RequestedQty:   item.Quantity,
-				AvailableStock: 0,
-				IsAvailable:    false,
-				Message:        "Product not found",
-			})
-			insufficientItems = append(insufficientItems, "Unknown product")
-			continue
+			if errors.Is(err, models.ErrProductNotFound) {
+				// Product genuinely doesn't exist
+				response.Valid = false
+				response.Items = append(response.Items, ItemValidation{
+					ProductID:      item.ProductID,
+					RequestedQty:   item.Quantity,
+					AvailableStock: 0,
+					IsAvailable:    false,
+					Message:        "Product not found",
+				})
+				insufficientItems = append(insufficientItems, "Unknown product")
+				continue
+			}
+			// DB connection error (Neon cold start, etc.) — don't falsely say "not found"
+			log.Printf("❌ DB error during stock validation for product %d: %v", item.ProductID, err)
+			http.Error(w, `{"error": "Temporary database issue, please try again"}`, http.StatusServiceUnavailable)
+			return
 		}
 
 		validation := ItemValidation{

@@ -22,7 +22,6 @@ import (
 	"bakeflow/models"
 
 	"github.com/gorilla/mux"
-	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -433,20 +432,38 @@ func AdminBootstrap(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AdminGetOrders returns all orders for admin dashboard
+// AdminGetOrders returns orders for admin dashboard (paginated, optimized)
 func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
-	// Set JSON header before any response
 	w.Header().Set("Content-Type", "application/json")
 
-	log.Printf("[Admin] Fetching all orders from database...")
-
 	statusFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order_status")))
+
+	// Pagination params
+	page := 1
+	limit := 50
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 200 {
+			limit = v
+		}
+	}
+	offset := (page - 1) * limit
+
+	log.Printf("[Admin] Fetching orders page=%d limit=%d status=%q", page, limit, statusFilter)
+
+	// Get total count for pagination
+	totalCount, _ := models.GetOrdersCount(statusFilter)
+
 	var orders []models.Order
 	var err error
 	if statusFilter != "" {
-		orders, err = models.GetOrdersByStatus(statusFilter)
+		orders, err = models.GetOrdersByStatusPaginated(statusFilter, offset, limit)
 	} else {
-		orders, err = models.GetAllOrders()
+		orders, err = models.GetAllOrdersPaginated(offset, limit)
 	}
 	if err != nil {
 		log.Printf("[Admin] Error fetching orders: %v", err)
@@ -460,8 +477,9 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[Admin] Found %d orders", len(orders))
+	log.Printf("[Admin] Found %d orders (total: %d)", len(orders), totalCount)
 
+	// Batch: last item times
 	if len(orders) > 0 {
 		ids := make([]int, 0, len(orders))
 		for _, order := range orders {
@@ -478,10 +496,10 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Facebook profiles (only if enabled, max 15 lookups)
 	enableStr := strings.ToLower(strings.TrimSpace(os.Getenv("ENABLE_FB_PROFILE")))
 	includeParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("include_fb_profile")))
-	allowProfiles := enableStr == "1" || enableStr == "true"
-	enableProfiles := allowProfiles || includeParam == "1" || includeParam == "true"
+	enableProfiles := enableStr == "1" || enableStr == "true" || includeParam == "1" || includeParam == "true"
 
 	isLikelyPSID := func(s string) bool {
 		if len(s) < 8 {
@@ -499,8 +517,7 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 		profileCache := make(map[string]string)
 		client := &http.Client{Timeout: 3 * time.Second}
 		failCount := 0
-		maxLookups := 25
-		loggedProfileError := false
+		maxLookups := 15
 
 		for i := range orders {
 			senderID := strings.TrimSpace(orders[i].SenderID)
@@ -511,7 +528,7 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 				orders[i].FBName = cached
 				continue
 			}
-			if failCount >= 5 || len(profileCache) >= maxLookups {
+			if failCount >= 3 || len(profileCache) >= maxLookups {
 				continue
 			}
 			fbName, fbAvatar, err := fetchFacebookProfile(client, senderID)
@@ -521,12 +538,8 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				failCount++
-				if !loggedProfileError {
-					log.Printf("[Admin] Facebook profile lookup failed for sender %s: %v", senderID, err)
-					loggedProfileError = true
-				}
 				if strings.Contains(err.Error(), "PAGE_ACCESS_TOKEN not set") || strings.Contains(strings.ToLower(err.Error()), "permission") || strings.Contains(err.Error(), "OAuthException") {
-					failCount = 5
+					failCount = 3
 				}
 				continue
 			}
@@ -536,18 +549,25 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Batch: payment statuses from payments table
 	paymentMap := make(map[int]map[string]string)
 	if len(orders) > 0 {
 		ids := make([]int, 0, len(orders))
 		for _, order := range orders {
 			ids = append(ids, order.ID)
 		}
-		rows, err := configs.DB.Query(`
+		ph := make([]string, len(ids))
+		args := make([]interface{}, len(ids))
+		for i, id := range ids {
+			ph[i] = fmt.Sprintf("$%d", i+1)
+			args[i] = id
+		}
+		rows, err := configs.DB.Query(fmt.Sprintf(`
 			SELECT DISTINCT ON (order_id) order_id, COALESCE(method, '') as method, COALESCE(status, '') as status
 			FROM payments
-			WHERE order_id = ANY($1)
+			WHERE order_id IN (%s)
 			ORDER BY order_id, created_at DESC
-		`, pq.Array(ids))
+		`, strings.Join(ph, ",")), args...)
 		if err == nil {
 			for rows.Next() {
 				var orderID int
@@ -560,6 +580,25 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			rows.Close()
+		}
+	}
+
+	// Batch: customer phones — one query for all unique senders
+	phoneBySender := make(map[string]string)
+	if len(orders) > 0 {
+		senderSet := make(map[string]bool)
+		for _, order := range orders {
+			sid := strings.TrimSpace(order.SenderID)
+			if sid != "" {
+				senderSet[sid] = true
+			}
+		}
+		senders := make([]string, 0, len(senderSet))
+		for sid := range senderSet {
+			senders = append(senders, sid)
+		}
+		if phoneMap, err := models.GetCustomerPhonesBatch(senders); err == nil {
+			phoneBySender = phoneMap
 		}
 	}
 
@@ -579,23 +618,6 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 		return ""
 	}
 
-	phoneBySender := make(map[string]string)
-	for _, order := range orders {
-		senderID := strings.TrimSpace(order.SenderID)
-		if senderID == "" {
-			continue
-		}
-		if _, ok := phoneBySender[senderID]; ok {
-			continue
-		}
-		phones, err := models.GetCustomerPhones(senderID)
-		if err == nil && len(phones) > 0 {
-			phoneBySender[senderID] = phones[0]
-		} else {
-			phoneBySender[senderID] = ""
-		}
-	}
-
 	type adminOrder struct {
 		models.Order
 		PaymentStatus string `json:"payment_status"`
@@ -604,16 +626,24 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 	}
 	responseOrders := make([]adminOrder, 0, len(orders))
 	for _, order := range orders {
-		method := "cash"
-		status := "none"
+		// Use payment_method from order record (already loaded in main query)
+		method := strings.ToLower(strings.TrimSpace(order.PaymentMethod))
+		if method == "" {
+			method = "cash"
+		}
+
+		// Payment verification status from payments table
+		payStatus := "none"
 		if meta, ok := paymentMap[order.ID]; ok {
 			if meta["status"] != "" {
-				status = meta["status"]
+				payStatus = meta["status"]
 			}
+			// If payments table has scan method, prefer that
 			if meta["method"] != "" {
 				method = "scan"
 			}
 		}
+
 		phone := ""
 		if senderID := strings.TrimSpace(order.SenderID); senderID != "" {
 			phone = strings.TrimSpace(phoneBySender[senderID])
@@ -623,19 +653,24 @@ func AdminGetOrders(w http.ResponseWriter, r *http.Request) {
 		}
 		responseOrders = append(responseOrders, adminOrder{
 			Order:         order,
-			PaymentStatus: status,
+			PaymentStatus: payStatus,
 			PaymentMethod: method,
 			CustomerPhone: phone,
 		})
 	}
 
-	// Return orders as JSON
-	response := map[string]interface{}{
-		"orders": responseOrders,
-		"total":  len(responseOrders),
+	totalPages := (totalCount + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
 	}
 
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"orders":      responseOrders,
+		"total":       totalCount,
+		"page":        page,
+		"limit":       limit,
+		"total_pages": totalPages,
+	})
 }
 
 func AdminBlockMessengerUser(w http.ResponseWriter, r *http.Request) {
@@ -900,7 +935,8 @@ func AdminUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Parse request body
 	var requestBody struct {
-		Status string `json:"status"`
+		Status        string `json:"status"`
+		CashCollected bool   `json:"cash_collected"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -936,12 +972,14 @@ func AdminUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Validate allowed status transition (no skipping)
 	allowedNext := map[string]string{
-		"scheduled": "preparing",
-		"pending":   "preparing",
-		"confirmed": "preparing", // Verified payment -> preparing
-		"preparing": "ready",
-		"ready":     "delivered",
-		"delivered": "",
+		"scheduled":            "preparing",
+		"pending":              "preparing",
+		"confirmed":            "preparing", // Verified payment -> preparing
+		"pending_payment":      "preparing", // Cash/QR pending -> preparing
+		"pending_verification": "preparing", // Receipt uploaded -> preparing
+		"preparing":            "ready",
+		"ready":                "delivered",
+		"delivered":            "",
 	}
 	if next, ok := allowedNext[currentStatus]; !ok {
 		http.Error(w, "Invalid current status", http.StatusBadRequest)
@@ -982,6 +1020,26 @@ func AdminUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[Admin] Order #%d status updated to: %s", orderID, requestBody.Status)
+
+	// If marking as delivered with cash_collected, create/update payment record
+	if requestBody.Status == "delivered" && requestBody.CashCollected {
+		_, pmErr := configs.DB.Exec(`
+			INSERT INTO payments (order_id, user_id, amount, method, status, created_at)
+			VALUES ($1, $2, $3, 'cash', 'collected', NOW())
+			ON CONFLICT (order_id) WHERE method = 'cash'
+			DO UPDATE SET status = 'collected'
+		`, orderID, currentOrder.SenderID, currentOrder.TotalAmount)
+		if pmErr != nil {
+			// Non-critical — log but don't fail the status update
+			log.Printf("[Admin] Warning: failed to record cash payment for order #%d: %v", orderID, pmErr)
+			// Simpler fallback insert without ON CONFLICT
+			configs.DB.Exec(`
+				INSERT INTO payments (order_id, user_id, amount, method, status, created_at)
+				VALUES ($1, $2, $3, 'cash', 'collected', NOW())
+			`, orderID, currentOrder.SenderID, currentOrder.TotalAmount)
+		}
+		log.Printf("[Admin] 💵 Cash payment recorded for order #%d", orderID)
+	}
 
 	// Respond immediately before potentially slow external notification
 	resp := map[string]interface{}{
