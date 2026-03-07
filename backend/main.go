@@ -5,6 +5,7 @@ import (
 	"bakeflow/controllers"
 	"bakeflow/routes"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -33,28 +34,37 @@ func main() {
 		log.Println("WARNING: PAGE_ACCESS_TOKEN is not set")
 	}
 
-	// Connect to database
-	configs.ConnectDB()
-
-	// Setup HTTP routes with middleware
-	router := routes.SetupRoutes()
-
 	// Get port from environment or use default
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// Run non-critical setup tasks in the background so the port opens immediately.
-	// Render (and similar PaaS) require the port to be bound quickly or they
-	// consider the deploy failed.
+	// ⚡ Bind the port IMMEDIATELY so Render detects it right away.
+	// Render (and similar PaaS) scan for an open port within a short timeout window.
+	// We must bind the port BEFORE any slow operations (DB connect, API calls).
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "address already in use") {
+			log.Fatalf("❌ Server failed to start: %v\n\nPort %s is already in use. Either stop the process using it, or run BakeFlow on a different port by setting PORT (e.g. PORT=8081).", err, port)
+		}
+		log.Fatalf("❌ Server failed to start: %v", err)
+	}
+	log.Printf("🚀 Port %s is now open and listening!", port)
+
+	// Connect to database (may take a few seconds for Neon cold-start)
+	configs.ConnectDB()
+
+	// Setup HTTP routes with middleware
+	router := routes.SetupRoutes()
+
+	// Run non-critical setup tasks in the background.
 	go func() {
 		// Setup Facebook Messenger Persistent Menu
 		log.Println("⚙️  Setting up Facebook Messenger features...")
 		controllers.SetupPersistentMenu()
 		controllers.SetupGetStartedButton()
-		// Note: SetupGreetingText() disabled as Facebook's newer API requires additional parameters
-		// controllers.SetupGreetingText()
 		log.Println("✅ Facebook Messenger setup complete")
 
 		// Start background stock cleanup job (releases expired reservations)
@@ -63,13 +73,9 @@ func main() {
 		log.Println("✅ Stock cleanup job started (runs every minute)")
 	}()
 
-	// Start the server — must happen quickly so Render detects the open port
-	log.Printf("🚀 Server starting on port %s...", port)
-	if err := http.ListenAndServe(":"+port, router); err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "address already in use") {
-			log.Fatalf("❌ Server failed to start: %v\n\nPort %s is already in use. Either stop the process using it, or run BakeFlow on a different port by setting PORT (e.g. PORT=8081).", err, port)
-		}
-		log.Fatalf("❌ Server failed to start: %v", err)
+	// Serve HTTP on the already-open listener
+	log.Printf("🚀 Server ready and serving on port %s", port)
+	if err := http.Serve(listener, router); err != nil {
+		log.Fatalf("❌ Server failed: %v", err)
 	}
 }
