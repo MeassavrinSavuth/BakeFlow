@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // SetupPersistentMenu creates a persistent menu (hamburger menu) in Messenger
@@ -65,7 +66,8 @@ func SetupPersistentMenu() error {
 	payloadBytes, _ := json.Marshal(payload)
 	url := fmt.Sprintf("https://graph.facebook.com/v18.0/me/messenger_profile?access_token=%s", pageAccessToken)
 
-	resp, err := http.Post(url, "application/json", bytes.NewReader(payloadBytes))
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(payloadBytes))
 	if err != nil {
 		return err
 	}
@@ -97,7 +99,8 @@ func SetupGetStartedButton() error {
 	payloadBytes, _ := json.Marshal(payload)
 	url := fmt.Sprintf("https://graph.facebook.com/v18.0/me/messenger_profile?access_token=%s", pageAccessToken)
 
-	resp, err := http.Post(url, "application/json", bytes.NewReader(payloadBytes))
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(payloadBytes))
 	if err != nil {
 		return err
 	}

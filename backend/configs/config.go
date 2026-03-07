@@ -1,6 +1,7 @@
 package configs
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -41,7 +42,9 @@ func ConnectDB() {
 	DB.SetConnMaxLifetime(5 * time.Minute) // recycle before Neon kills it
 	DB.SetConnMaxIdleTime(1 * time.Minute) // don't hold idle connections too long
 
-	err = DB.Ping()
+	pingCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err = DB.PingContext(pingCtx)
 	if err != nil {
 		log.Fatal("Cannot reach DB:", err)
 	}

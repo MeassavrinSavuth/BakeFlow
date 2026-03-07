@@ -36,19 +36,6 @@ func main() {
 	// Connect to database
 	configs.ConnectDB()
 
-	// Setup Facebook Messenger Persistent Menu
-	log.Println("⚙️  Setting up Facebook Messenger features...")
-	controllers.SetupPersistentMenu()
-	controllers.SetupGetStartedButton()
-	// Note: SetupGreetingText() disabled as Facebook's newer API requires additional parameters
-	// controllers.SetupGreetingText()
-	log.Println("✅ Facebook Messenger setup complete")
-
-	// Start background stock cleanup job (releases expired reservations)
-	log.Println("⚙️  Starting stock reservation cleanup job...")
-	controllers.StartStockCleanupJob(1 * time.Minute)
-	log.Println("✅ Stock cleanup job started (runs every minute)")
-
 	// Setup HTTP routes with middleware
 	router := routes.SetupRoutes()
 
@@ -58,8 +45,26 @@ func main() {
 		port = "8080"
 	}
 
-	// Start the server
-	log.Printf("Server starting on port %s...", port)
+	// Run non-critical setup tasks in the background so the port opens immediately.
+	// Render (and similar PaaS) require the port to be bound quickly or they
+	// consider the deploy failed.
+	go func() {
+		// Setup Facebook Messenger Persistent Menu
+		log.Println("⚙️  Setting up Facebook Messenger features...")
+		controllers.SetupPersistentMenu()
+		controllers.SetupGetStartedButton()
+		// Note: SetupGreetingText() disabled as Facebook's newer API requires additional parameters
+		// controllers.SetupGreetingText()
+		log.Println("✅ Facebook Messenger setup complete")
+
+		// Start background stock cleanup job (releases expired reservations)
+		log.Println("⚙️  Starting stock reservation cleanup job...")
+		controllers.StartStockCleanupJob(1 * time.Minute)
+		log.Println("✅ Stock cleanup job started (runs every minute)")
+	}()
+
+	// Start the server — must happen quickly so Render detects the open port
+	log.Printf("🚀 Server starting on port %s...", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "address already in use") {
