@@ -75,6 +75,29 @@ body {
 }
 .text-primary-bake { color: #D8A35D !important; }
 
+.btn-bake {
+  background: linear-gradient(135deg, #D8A35D 0%, #F4C27F 100%) !important;
+  border-color: #D8A35D !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.btn-bake:hover {
+  filter: brightness(0.98);
+}
+
+.btn-outline-bake {
+  border-color: #D8A35D !important;
+  color: #D8A35D !important;
+  font-weight: 600;
+}
+
+.btn-outline-bake:hover {
+  background: rgba(216, 163, 93, 0.10) !important;
+  border-color: #D8A35D !important;
+  color: #D8A35D !important;
+}
+
 @media (max-width:991px){
   .bf-sidebar { position:fixed; left:0; top:0; height:100vh; z-index:1050; transform:translateX(-100%); }
   .bf-sidebar.expanded { transform:translateX(0); box-shadow:4px 0 15px rgba(0,0,0,0.1); }

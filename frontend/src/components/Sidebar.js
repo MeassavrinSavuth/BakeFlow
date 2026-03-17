@@ -68,21 +68,21 @@ export default function Sidebar({ open, toggle }) {
             <div className="d-flex align-items-center gap-2">
               {open ? (
                 <>
-                  <button className={`btn btn-sm d-flex align-items-center ${lang === 'en' ? 'btn-primary text-white' : 'btn-outline-secondary'}`} onClick={() => setLang('en')} aria-label={t('english')}>
+                  <button className={`btn btn-sm d-flex align-items-center ${lang === 'en' ? 'btn-bake' : 'btn-outline-bake'}`} onClick={() => setLang('en')} aria-label={t('english')}>
                     <span style={{ fontSize: '18px', lineHeight: 1 }}>🇬🇧</span>
                     <span className="ms-2 d-none d-md-inline">{t('english')}</span>
                   </button>
-                  <button className={`btn btn-sm d-flex align-items-center ${lang === 'my' ? 'btn-primary text-white' : 'btn-outline-secondary'}`} onClick={() => setLang('my')} aria-label={t('myanmar')}>
+                  <button className={`btn btn-sm d-flex align-items-center ${lang === 'my' ? 'btn-bake' : 'btn-outline-bake'}`} onClick={() => setLang('my')} aria-label={t('myanmar')}>
                     <span style={{ fontSize: '18px', lineHeight: 1 }}>🇲🇲</span>
                     <span className="ms-2 d-none d-md-inline">{t('myanmar')}</span>
                   </button>
                 </>
               ) : (
                 <>
-                  <button className={`btn btn-sm btn-link p-0 ${lang === 'en' ? 'text-primary' : 'text-secondary'}`} title={t('english')} onClick={() => setLang('en')} aria-label={t('english')}>
+                  <button className={`btn btn-sm btn-link p-0 ${lang === 'en' ? 'text-primary-bake' : 'text-secondary'}`} title={t('english')} onClick={() => setLang('en')} aria-label={t('english')}>
                     <span style={{ fontSize: '18px' }}>🇬🇧</span>
                   </button>
-                  <button className={`btn btn-sm btn-link p-0 ${lang === 'my' ? 'text-primary' : 'text-secondary'}`} title={t('myanmar')} onClick={() => setLang('my')} aria-label={t('myanmar')}>
+                  <button className={`btn btn-sm btn-link p-0 ${lang === 'my' ? 'text-primary-bake' : 'text-secondary'}`} title={t('myanmar')} onClick={() => setLang('my')} aria-label={t('myanmar')}>
                     <span style={{ fontSize: '18px' }}>🇲🇲</span>
                   </button>
                 </>
