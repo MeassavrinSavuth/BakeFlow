@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -179,6 +180,33 @@ func ValidateCartStock(w http.ResponseWriter, r *http.Request) {
 	var insufficientItems []string
 
 	for _, item := range req.Items {
+		maxQty := getMaxItemQtyPerOrder()
+		if item.Quantity <= 0 {
+			response.Valid = false
+			response.Items = append(response.Items, ItemValidation{
+				ProductID:      item.ProductID,
+				RequestedQty:   item.Quantity,
+				AvailableStock: 0,
+				IsAvailable:    false,
+				Message:        "Quantity must be at least 1",
+			})
+			insufficientItems = append(insufficientItems, "Invalid quantity")
+			continue
+		}
+
+		if item.Quantity > maxQty {
+			response.Valid = false
+			response.Items = append(response.Items, ItemValidation{
+				ProductID:      item.ProductID,
+				RequestedQty:   item.Quantity,
+				AvailableStock: 0,
+				IsAvailable:    false,
+				Message:        fmt.Sprintf("Maximum %d units per item per order", maxQty),
+			})
+			insufficientItems = append(insufficientItems, "Item quantity limit exceeded")
+			continue
+		}
+
 		status, err := models.GetProductStockStatus(item.ProductID)
 		if err != nil {
 			if errors.Is(err, models.ErrProductNotFound) {

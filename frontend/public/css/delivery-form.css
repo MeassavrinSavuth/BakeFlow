@@ -209,6 +209,47 @@
     height: 18px;
 }
 
+/* ========== Payment Group ========== */
+.payment-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-sm);
+    margin-top: 8px;
+}
+
+.payment-option {
+    padding: 16px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    text-align: center;
+    transition: all var(--transition);
+    font-weight: 700;
+    background: var(--gray-50);
+    color: var(--gray-700);
+    border: 2px solid var(--gray-200);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.payment-option:hover {
+    border-color: var(--gray-300);
+    background: var(--gray-100);
+}
+
+.payment-option.selected {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+    box-shadow: var(--shadow-sm);
+}
+
+.payment-option svg {
+    width: 18px;
+    height: 18px;
+}
+
 /* ========== Mini Actions ========== */
 .mini-actions {
     display: flex;

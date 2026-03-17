@@ -13,6 +13,53 @@ let cartItems = [];
 
 let pendingSchedule = null;
 
+const MAX_ITEM_QTY_PER_ORDER = 5;
+
+function getMaxItemQtyPerOrder() {
+    return MAX_ITEM_QTY_PER_ORDER;
+}
+
+function getTotalQtyForProduct(productId, opts = {}) {
+    const pid = Number(productId);
+    if (!Number.isFinite(pid)) return 0;
+    const excludeCartItemId = opts.excludeCartItemId || null;
+    return cartItems.reduce((sum, item) => {
+        if (Number(item.productId) !== pid) return sum;
+        if (excludeCartItemId && item.id === excludeCartItemId) return sum;
+        return sum + Number(item.qty || 0);
+    }, 0);
+}
+
+function getRemainingQtyCapForProduct(productId, opts = {}) {
+    const cap = getMaxItemQtyPerOrder();
+    const inCart = getTotalQtyForProduct(productId, opts);
+    const remaining = cap - inCart;
+    return remaining > 0 ? remaining : 0;
+}
+
+function sanitizeCartItemCaps() {
+    const cap = getMaxItemQtyPerOrder();
+    const usedByProduct = new Map();
+    const nextItems = [];
+
+    cartItems.forEach(item => {
+        const pid = Number(item.productId);
+        const qty = Number(item.qty || 0);
+        if (!Number.isFinite(pid) || !Number.isFinite(qty) || qty <= 0) return;
+
+        const used = usedByProduct.get(pid) || 0;
+        if (used >= cap) return;
+
+        const allowed = Math.min(qty, cap - used);
+        if (allowed <= 0) return;
+
+        nextItems.push({ ...item, qty: allowed });
+        usedByProduct.set(pid, used + allowed);
+    });
+
+    cartItems = nextItems;
+}
+
 // Generate unique cart item ID
 function generateCartItemId() {
     return 'ci_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -86,6 +133,15 @@ function addToCartWithNote(productId, qty, note) {
         showToast(`Only ${remainingBefore} left for this item`);
         return;
     }
+
+    const remainingCap = getRemainingQtyCapForProduct(productId);
+    if (remainingCap <= 0) {
+        return;
+    }
+    const safeQtyToAdd = Math.min(Number(qty || 0), remainingCap);
+    if (!Number.isFinite(safeQtyToAdd) || safeQtyToAdd <= 0) {
+        return;
+    }
     
     // Check if same product with same note already exists
     const existingItem = cartItems.find(item => 
@@ -95,7 +151,7 @@ function addToCartWithNote(productId, qty, note) {
     
     if (existingItem) {
         // Increment existing item
-        existingItem.qty += qty;
+        existingItem.qty += safeQtyToAdd;
         if (product && !existingItem.productSnapshot) {
             existingItem.productSnapshot = {
                 id: product.id,
@@ -110,7 +166,7 @@ function addToCartWithNote(productId, qty, note) {
         cartItems.push({
             id: generateCartItemId(),
             productId: parseInt(productId),
-            qty: qty,
+            qty: safeQtyToAdd,
             note: note || '',
             productSnapshot: product ? {
                 id: product.id,
@@ -140,7 +196,8 @@ function updateCartItem(cartItemId, newQty, newNote) {
         return;
     }
     
-    item.qty = newQty;
+    const maxForItem = Number(item.qty || 0) + getRemainingQtyCapForProduct(item.productId, { excludeCartItemId: item.id });
+    item.qty = Math.min(newQty, maxForItem);
     item.note = newNote || '';
     
     syncLegacyCart();
@@ -270,6 +327,9 @@ function decreaseQty(productId) {
 }
 
 function updateCart() {
+    sanitizeCartItemCaps();
+    syncLegacyCart();
+
     let total = 0;
     let itemCount = 0;
 
@@ -474,6 +534,11 @@ function updateOrderTypeBadge() {
     }
 
     const orderType = detectOrderType();
+    if (orderType === 'regular') {
+        badge.style.display = 'none';
+        return;
+    }
+
     badge.style.display = 'flex';
 
     switch (orderType) {
@@ -527,8 +592,7 @@ function updateOrderTypeBadge() {
             }
             break;
         default:
-            badge.className = 'order-type-badge badge-regular';
-            badge.innerHTML = '🛒 Regular Order — <em>Ready today</em>';
+            badge.style.display = 'none';
             break;
     }
 }
@@ -544,7 +608,7 @@ function setCart(newCart) {
     // Convert legacy cart to cartItems format
     cartItems = [];
     Object.keys(cart).forEach(productId => {
-        const qty = cart[productId];
+        const qty = Math.min(Number(cart[productId] || 0), getMaxItemQtyPerOrder());
         if (qty > 0) {
             cartItems.push({
                 id: generateCartItemId(),
@@ -554,6 +618,7 @@ function setCart(newCart) {
             });
         }
     });
+    syncLegacyCart();
 }
 
 function getPendingSchedule() {
@@ -619,3 +684,5 @@ window.removeCartItem = removeCartItemById;
 window.getCartItemsForOrder = getCartItemsForOrder;
 window.cartHasNotes = cartHasNotes;
 window.getProductById = getProductById;
+window.getMaxItemQtyPerOrder = getMaxItemQtyPerOrder;
+window.getRemainingQtyCapForProduct = getRemainingQtyCapForProduct;

@@ -37,6 +37,7 @@ function openDeliveryForm() {
 
     adjustSafePadding();
     if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+    if (window.ensurePaymentMethodDefault) window.ensurePaymentMethodDefault();
     updatePhoneUi();
 }
 

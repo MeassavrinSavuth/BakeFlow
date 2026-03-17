@@ -11,7 +11,6 @@ import { formatCurrency } from '../../utils/formatCurrency';
 export default function ProductsPage() {
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'https://bakeflow.onrender.com';
   const PRODUCT_CACHE_KEY = 'bf_admin_products_cache';
-  const PREORDER_CACHE_KEY = 'bf_admin_preorder_settings_cache';
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,9 +18,6 @@ export default function ProductsPage() {
   const [filter, setFilter] = useState({ category: '', status: '', search: '' });
   const [notification, setNotification] = useState({ show: false, message: '', type: '' });
   const [stockStatus, setStockStatus] = useState({});
-  const [preorderSettings, setPreorderSettings] = useState({ enabled: true, product_ids: [] });
-  const [preorderLoading, setPreorderLoading] = useState(true);
-  const [preorderSaving, setPreorderSaving] = useState(false);
   const { notifications, unreadCount, hasUnread, markAsRead, markAllRead, clearAll } = useNotifications();
   const { t } = useTranslation();
 
@@ -116,59 +112,6 @@ export default function ProductsPage() {
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
-  const fetchPreorderSettings = useCallback(async () => {
-    try {
-      setPreorderLoading(true);
-      const res = await fetch(`${API_BASE}/api/admin/preorder-settings`, {
-        headers: buildAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      const data = await res.json();
-      const nextSettings = {
-        enabled: !!data.enabled,
-        product_ids: Array.isArray(data.product_ids) ? data.product_ids : [],
-      };
-      setPreorderSettings(nextSettings);
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem(PREORDER_CACHE_KEY, JSON.stringify(nextSettings));
-        } catch { }
-      }
-    } catch {
-      let usedCache = false;
-      if (typeof window !== 'undefined') {
-        try {
-          const cached = JSON.parse(localStorage.getItem(PREORDER_CACHE_KEY) || 'null');
-          if (cached && typeof cached === 'object') {
-            setPreorderSettings({
-              enabled: cached.enabled !== false,
-              product_ids: Array.isArray(cached.product_ids) ? cached.product_ids : [],
-            });
-            usedCache = true;
-          }
-        } catch { }
-      }
-      if (!usedCache) setPreorderSettings({ enabled: true, product_ids: [] });
-    } finally {
-      setPreorderLoading(false);
-    }
-  }, [API_BASE, buildAuthHeaders]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const cached = JSON.parse(localStorage.getItem(PREORDER_CACHE_KEY) || 'null');
-      if (cached && typeof cached === 'object') {
-        setPreorderSettings({
-          enabled: cached.enabled !== false,
-          product_ids: Array.isArray(cached.product_ids) ? cached.product_ids : [],
-        });
-      }
-    } catch { }
-  }, []);
-
-  useEffect(() => { fetchPreorderSettings(); }, [fetchPreorderSettings]);
-
   const showNotification = (message, type) => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification({ show: false, message: '', type: '' }), 5000);
@@ -235,91 +178,6 @@ export default function ProductsPage() {
     }
   };
 
-  const preorderSelectedSet = useMemo(() => {
-    return new Set(preorderSettings.product_ids || []);
-  }, [preorderSettings.product_ids]);
-
-  const normalizeCategory = useCallback((value) => String(value || '').trim().toLowerCase(), []);
-
-  const preorderSelectableProducts = useMemo(() => {
-    return products.filter((product) => {
-      const category = normalizeCategory(product.category);
-      return category === 'cakes' && product.status === 'active';
-    });
-  }, [products, normalizeCategory]);
-
-  const selectedPreorderProducts = useMemo(() => {
-    return preorderSelectableProducts.filter((product) => preorderSelectedSet.has(product.id));
-  }, [preorderSelectableProducts, preorderSelectedSet]);
-
-  const availablePreorderProducts = useMemo(() => {
-    return preorderSelectableProducts.filter((product) => !preorderSelectedSet.has(product.id));
-  }, [preorderSelectableProducts, preorderSelectedSet]);
-
-  const sanitizedPreorderSelection = useMemo(() => {
-    return preorderSelectableProducts
-      .filter((product) => preorderSelectedSet.has(product.id))
-      .map((product) => product.id);
-  }, [preorderSelectableProducts, preorderSelectedSet]);
-
-  const preorderDisabled = !preorderSettings.enabled;
-
-  const togglePreorderProduct = (id) => {
-    setPreorderSettings((prev) => {
-      const next = new Set(prev.product_ids || []);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return { ...prev, product_ids: Array.from(next) };
-    });
-  };
-
-  const selectAllPreorder = () => {
-    setPreorderSettings((prev) => {
-      const next = new Set(prev.product_ids || []);
-      preorderSelectableProducts.forEach((p) => next.add(p.id));
-      return { ...prev, product_ids: Array.from(next) };
-    });
-  };
-
-  const clearPreorderSelection = () => {
-    setPreorderSettings((prev) => ({ ...prev, product_ids: [] }));
-  };
-
-  const savePreorderSettings = async () => {
-    try {
-      setPreorderSaving(true);
-      const res = await fetch(`${API_BASE}/api/admin/preorder-settings`, {
-        method: 'PUT',
-        headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          enabled: !!preorderSettings.enabled,
-          product_ids: sanitizedPreorderSelection,
-        }),
-      });
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      const data = await res.json();
-      if (data.success) {
-        const nextSettings = {
-          enabled: !!data.enabled,
-          product_ids: Array.isArray(data.product_ids) ? data.product_ids : [],
-        };
-        setPreorderSettings(nextSettings);
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem(PREORDER_CACHE_KEY, JSON.stringify(nextSettings));
-          } catch { }
-        }
-        showNotification('Preorder banner updated', 'success');
-      } else {
-        showNotification(data.error || 'Failed to update preorder banner', 'danger');
-      }
-    } catch {
-      showNotification('Error updating preorder banner', 'danger');
-    } finally {
-      setPreorderSaving(false);
-    }
-  };
-
   const getStatusBadge = (status) => {
     const m = {
       draft: 'bg-warning-subtle text-warning border border-warning-subtle',
@@ -372,158 +230,6 @@ export default function ProductsPage() {
                   <button type="button" className="btn-close" onClick={() => setNotification({ show: false, message: '', type: '' })}></button>
                 </div>
               )}
-
-              <div className="card shadow-sm mb-4">
-                <div className="card-body">
-                  <div className="mb-3">
-                    <h5 className="mb-1 fw-semibold">Preorder Display on Customer Page</h5>
-                    <div className="text-muted small">Select which products will be shown for preorder to customers.</div>
-                  </div>
-                  <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
-                    <div className="d-flex flex-wrap align-items-center gap-2">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-secondary"
-                        onClick={selectAllPreorder}
-                        disabled={preorderLoading || products.length === 0 || preorderDisabled}
-                      >
-                        Select all loaded
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-secondary"
-                        onClick={clearPreorderSelection}
-                        disabled={preorderLoading || preorderSettings.product_ids.length === 0 || preorderDisabled}
-                      >
-                        Clear selection
-                      </button>
-                    </div>
-                    <div className="form-check form-switch d-flex align-items-center gap-2">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="preorderEnabledToggle"
-                        checked={!!preorderSettings.enabled}
-                        onChange={(e) => setPreorderSettings((prev) => ({ ...prev, enabled: e.target.checked }))}
-                        disabled={preorderLoading}
-                      />
-                      <label className="form-check-label fw-semibold" htmlFor="preorderEnabledToggle">Enable Preorder Display</label>
-                    </div>
-                  </div>
-                  <div className="position-relative">
-                    {preorderDisabled && (
-                      <div className="bg-secondary bg-opacity-10 rounded-3" style={{ position: 'absolute', inset: 0, zIndex: 2 }}></div>
-                    )}
-                    <div className={`row g-3 ${preorderDisabled ? 'opacity-50' : ''}`}>
-                      <div className="col-12 col-lg-6">
-                        <div className="d-flex align-items-center justify-content-between mb-2">
-                          <div className="fw-semibold">Available Products (Not in Preorder Yet)</div>
-                          <span className="badge bg-light text-muted border">{availablePreorderProducts.length}</span>
-                        </div>
-                        <div className="d-flex flex-column gap-2">
-                          {availablePreorderProducts.map((product) => {
-                            const statusLabel = product.status === 'active' ? 'Active' : 'Inactive';
-                            return (
-                              <div className="border rounded-3 p-3 d-flex align-items-center gap-3 bg-white" key={`preorder-available-${product.id}`}>
-                                <input
-                                  type="checkbox"
-                                  className="form-check-input mt-0"
-                                  style={{ width: 24, height: 24 }}
-                                  checked={false}
-                                  onChange={() => togglePreorderProduct(product.id)}
-                                  disabled={preorderLoading || preorderDisabled}
-                                />
-                                <div className="rounded-3 overflow-hidden bg-light" style={{ width: 64, height: 64 }}>
-                                  {product.image_url ? (
-                                    <Image src={product.image_url} alt={product.name} width={64} height={64} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                  ) : (
-                                    <div className="d-flex align-items-center justify-content-center h-100">
-                                      <i className="bi bi-image text-muted"></i>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex-grow-1">
-                                  <div className="fw-semibold d-flex align-items-center gap-2">
-                                    {product.name}
-                                    <span className="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle">{product.category}</span>
-                                  </div>
-                                  <div className="text-muted small d-flex align-items-center gap-2">
-                                    <span className={`badge rounded-pill ${getStatusBadge(product.status)}`}>{statusLabel}</span>
-                                    <span>{formatCurrency(product.price || 0)}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {!availablePreorderProducts.length && (
-                            <div className="text-muted small">All loaded products are already in preorder.</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-12 col-lg-6">
-                        <div className="d-flex align-items-center justify-content-between mb-2">
-                          <div className="fw-semibold text-success">Selected for Preorder</div>
-                          <span className="badge bg-success-subtle text-success border border-success-subtle">{selectedPreorderProducts.length}</span>
-                        </div>
-                        <div className="d-flex flex-column gap-2">
-                          {selectedPreorderProducts.map((product) => {
-                            const statusLabel = product.status === 'active' ? 'Active' : 'Inactive';
-                            return (
-                              <div className="border border-success border-2 rounded-3 p-3 d-flex align-items-center gap-3 bg-success-subtle" key={`preorder-selected-${product.id}`}>
-                                <input
-                                  type="checkbox"
-                                  className="form-check-input mt-0"
-                                  style={{ width: 24, height: 24 }}
-                                  checked
-                                  onChange={() => togglePreorderProduct(product.id)}
-                                  disabled={preorderLoading || preorderDisabled}
-                                />
-                                <div className="rounded-3 overflow-hidden bg-light" style={{ width: 64, height: 64 }}>
-                                  {product.image_url ? (
-                                    <Image src={product.image_url} alt={product.name} width={64} height={64} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                  ) : (
-                                    <div className="d-flex align-items-center justify-content-center h-100">
-                                      <i className="bi bi-image text-muted"></i>
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex-grow-1">
-                                  <div className="fw-semibold d-flex align-items-center gap-2">
-                                    {product.name}
-                                    <span className="badge rounded-pill bg-secondary-subtle text-secondary border border-secondary-subtle">{product.category}</span>
-                                  </div>
-                                  <div className="text-muted small d-flex align-items-center gap-2">
-                                    <span className="badge rounded-pill bg-success text-white d-inline-flex align-items-center gap-1">
-                                      <i className="bi bi-calendar-event"></i>
-                                      IN PREORDER
-                                    </span>
-                                    <span className={`badge rounded-pill ${getStatusBadge(product.status)}`}>{statusLabel}</span>
-                                    <span>{formatCurrency(product.price || 0)}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {!selectedPreorderProducts.length && (
-                            <div className="text-muted small">No products selected yet.</div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="d-flex justify-content-end mt-3">
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-lg"
-                      onClick={savePreorderSettings}
-                      disabled={preorderLoading || preorderSaving}
-                    >
-                      {preorderSaving ? 'Saving...' : 'Save Preorder Selection'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               {/* Page Header */}
               <div className="d-flex align-items-center justify-content-between mb-4">
                 <div>

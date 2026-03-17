@@ -192,7 +192,7 @@
         /* Stats row */
         .stats-row {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 12px;
             margin-bottom: 20px;
         }
@@ -826,7 +826,7 @@
         /* Responsive */
         @media (max-width: 600px) {
             .stats-row {
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(2, 1fr);
                 gap: 8px;
             }
             .stat-card {
@@ -878,10 +878,6 @@
                 <div class="stat-label">Saved</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value" id="statRecurring">0</div>
-                <div class="stat-label">Recurring</div>
-            </div>
-            <div class="stat-card">
                 <div class="stat-value" id="statThisMonth">0</div>
                 <div class="stat-label">Used</div>
             </div>
@@ -893,7 +889,6 @@
             <button class="filter-btn" data-filter="personal"><i data-lucide="user" style="width:14px;height:14px;"></i> Personal</button>
             <button class="filter-btn" data-filter="work"><i data-lucide="briefcase" style="width:14px;height:14px;"></i> Work</button>
             <button class="filter-btn" data-filter="event"><i data-lucide="calendar" style="width:14px;height:14px;"></i> Event</button>
-            <button class="filter-btn" data-filter="recurring"><i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Recurring</button>
         </div>
 
         <!-- Orders list -->
@@ -1053,8 +1048,6 @@
 
         function updateStats() {
             document.getElementById('statTotal').textContent = savedOrders.length;
-            const recurring = savedOrders.filter(o => o.tags && o.tags.includes('recurring')).length;
-            document.getElementById('statRecurring').textContent = recurring;
             // Count orders used this month
             const now = new Date();
             const thisMonth = savedOrders.filter(o => {

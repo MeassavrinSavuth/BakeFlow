@@ -297,6 +297,20 @@
                     </div>
                 </div>
             </div>
+
+            <div class="form-group" id="paymentMethodGroup">
+                <label class="form-label">
+                    <i data-lucide="credit-card"></i> Payment Method
+                </label>
+                <div class="payment-group" role="radiogroup" aria-label="Payment method">
+                    <div class="payment-option selected" data-payment="scan" onclick="selectPaymentMethod('scan')" role="radio" tabindex="0" aria-checked="true">
+                        <i data-lucide="scan-line"></i> Scan to Pay
+                    </div>
+                    <div class="payment-option" data-payment="cash" onclick="selectPaymentMethod('cash')" role="radio" tabindex="0" aria-checked="false">
+                        <i data-lucide="hand-coins"></i> Pay by Cash
+                    </div>
+                </div>
+            </div>
             
             <div class="form-group" id="addressGroup" style="display: none;">
                 <label class="form-label">

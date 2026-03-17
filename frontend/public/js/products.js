@@ -37,7 +37,15 @@ function getRemainingStockForProduct(productId, opts = {}) {
         }
     }
 
-    const remaining = available - inCart;
+    const cap = Number(window.getMaxItemQtyPerOrder ? window.getMaxItemQtyPerOrder() : 5);
+    const capRemaining = Math.max(0, cap - inCart);
+
+    if (!Number.isFinite(available)) {
+        return capRemaining;
+    }
+
+    const stockRemaining = Math.max(0, available - inCart);
+    const remaining = Math.min(stockRemaining, capRemaining);
     return remaining < 0 ? 0 : remaining;
 }
 window.getRemainingStockForProduct = getRemainingStockForProduct;

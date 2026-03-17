@@ -145,7 +145,13 @@ function increaseProductSheetQty() {
     const availableStock = currentProductSheet.product
         ? window.getRemainingStockForProduct?.(currentProductSheet.product.id, { excludeCartItemId: currentProductSheet.editingCartItemId })
         : null;
-    if (availableStock !== null && currentProductSheet.quantity >= availableStock) {
+    const currentLineQty = Number(currentProductSheet.editingCartItemId && window.getCartItem
+        ? (window.getCartItem(currentProductSheet.editingCartItemId)?.qty || 0)
+        : 0);
+    const maxQtyForSheet = Number.isFinite(availableStock)
+        ? (currentLineQty + availableStock)
+        : Number(window.getMaxItemQtyPerOrder ? window.getMaxItemQtyPerOrder() : 5);
+    if (currentProductSheet.quantity >= maxQtyForSheet) {
         updateProductSheetButtons();
         return;
     }
@@ -200,10 +206,16 @@ function updateProductSheetButtons() {
     const availableStock = currentProductSheet.product
         ? window.getRemainingStockForProduct?.(currentProductSheet.product.id, { excludeCartItemId: currentProductSheet.editingCartItemId })
         : getProductAvailableStock(currentProductSheet.product || {});
+    const currentLineQty = Number(currentProductSheet.editingCartItemId && window.getCartItem
+        ? (window.getCartItem(currentProductSheet.editingCartItemId)?.qty || 0)
+        : 0);
+    const maxQtyForSheet = Number.isFinite(availableStock)
+        ? (currentLineQty + availableStock)
+        : Number(window.getMaxItemQtyPerOrder ? window.getMaxItemQtyPerOrder() : 5);
     const outOfStock = currentProductSheet.product ? isProductOutOfStock(currentProductSheet.product) : false;
     if (decBtn) decBtn.disabled = currentProductSheet.quantity <= 1;
-    if (incBtn) incBtn.disabled = outOfStock || (availableStock !== null && currentProductSheet.quantity >= availableStock);
-    if (addBtn) addBtn.disabled = outOfStock || currentProductSheet.quantity <= 0 || (availableStock !== null && currentProductSheet.quantity > availableStock);
+    if (incBtn) incBtn.disabled = outOfStock || currentProductSheet.quantity >= maxQtyForSheet;
+    if (addBtn) addBtn.disabled = outOfStock || currentProductSheet.quantity <= 0 || currentProductSheet.quantity > maxQtyForSheet;
     if (stockHint) {
         if (outOfStock || (availableStock !== null && availableStock <= 0)) {
             stockHint.textContent = 'Out of stock';
@@ -250,6 +262,20 @@ function confirmAddToCart() {
     }
     if (availableStock !== null && currentProductSheet.quantity > availableStock) {
         currentProductSheet.quantity = availableStock;
+        document.getElementById('productSheetQty').textContent = currentProductSheet.quantity;
+        updateProductSheetTotal();
+        updateProductSheetButtons();
+        return;
+    }
+
+    const currentLineQty = Number(currentProductSheet.editingCartItemId && window.getCartItem
+        ? (window.getCartItem(currentProductSheet.editingCartItemId)?.qty || 0)
+        : 0);
+    const maxQtyForSheet = Number.isFinite(availableStock)
+        ? (currentLineQty + availableStock)
+        : Number(window.getMaxItemQtyPerOrder ? window.getMaxItemQtyPerOrder() : 5);
+    if (currentProductSheet.quantity > maxQtyForSheet) {
+        currentProductSheet.quantity = maxQtyForSheet;
         document.getElementById('productSheetQty').textContent = currentProductSheet.quantity;
         updateProductSheetTotal();
         updateProductSheetButtons();
@@ -681,6 +707,12 @@ function renderCartItemsList() {
             : 0;
         return group.items.map((item, idx) => {
             const qty = Number(item.qty || 0);
+            const remainingForLine = window.getRemainingStockForProduct
+                ? window.getRemainingStockForProduct(item.productId, { excludeCartItemId: item.id })
+                : null;
+            const canIncrease = Number.isFinite(remainingForLine)
+                ? remainingForLine > 0
+                : qty < Number(window.getMaxItemQtyPerOrder ? window.getMaxItemQtyPerOrder() : 5);
             const oldTotal = unitPrice * qty;
 
             let priceHtml = `<div class="cart-item-price">Ks ${oldTotal.toFixed(2)}</div>`;
@@ -779,7 +811,7 @@ function renderCartItemsList() {
                         <div class="cart-item-qty">
                             <button class="cart-item-qty-btn dec" onclick="updateCartItemQty('${item.id}', -1)">−</button>
                             <span class="cart-item-qty-num">${qty}</span>
-                            <button class="cart-item-qty-btn inc" onclick="updateCartItemQty('${item.id}', 1)">+</button>
+                            <button class="cart-item-qty-btn inc" onclick="updateCartItemQty('${item.id}', 1)" ${canIncrease ? '' : 'disabled'}>+</button>
                         </div>
                         <button class="cart-item-edit" onclick="editCartItem('${item.id}')">Edit note</button>
                     </div>

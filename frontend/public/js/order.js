@@ -162,6 +162,31 @@ function isValidMyanmarPhone(raw) {
     return !!normalizeMyanmarPhoneE164(raw);
 }
 
+function selectPaymentMethod(method) {
+    const normalized = String(method || '').toLowerCase() === 'scan' ? 'scan' : 'cash';
+    document.querySelectorAll('.payment-option').forEach(opt => {
+        const isSelected = opt.dataset.payment === normalized;
+        opt.classList.toggle('selected', isSelected);
+        opt.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+    });
+    window.__preferredPayMethod = normalized;
+    return normalized;
+}
+
+function getSelectedPaymentMethod() {
+    const selected = document.querySelector('.payment-option.selected');
+    if (selected && selected.dataset && selected.dataset.payment) {
+        return selected.dataset.payment === 'scan' ? 'scan' : 'cash';
+    }
+    return window.__preferredPayMethod === 'scan' ? 'scan' : 'cash';
+}
+
+function ensurePaymentMethodDefault() {
+    if (!document.querySelector('.payment-option')) return;
+    const current = getSelectedPaymentMethod();
+    selectPaymentMethod(current || 'cash');
+}
+
 /**
  * Validate cart stock before checkout
  * Returns { valid: boolean, message: string, items: [...] }
@@ -410,8 +435,9 @@ async function submitOrder() {
             let method;
             if (pendingSched || hasCustomItem) {
                 method = 'scan';
+                selectPaymentMethod('scan');
             } else {
-                method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+                method = getSelectedPaymentMethod();
             }
             if (!method) { resetSubmitButton(); return; }
             window.__preferredPayMethod = method;
@@ -429,8 +455,9 @@ async function submitOrder() {
             let method;
             if (pendingSched2 || hasCustomItem2) {
                 method = 'scan';
+                selectPaymentMethod('scan');
             } else {
-                method = await (window.choosePaymentMethod ? window.choosePaymentMethod() : choosePaymentMethodInline());
+                method = getSelectedPaymentMethod();
             }
             if (!method) { resetSubmitButton(); return; }
             window.__preferredPayMethod = method;
@@ -674,6 +701,10 @@ function resetSubmitButton() {
     }
 }
 
+window.selectPaymentMethod = selectPaymentMethod;
+window.getSelectedPaymentMethod = getSelectedPaymentMethod;
+window.ensurePaymentMethodDefault = ensurePaymentMethodDefault;
+
 // Modal for pending QR payment order — single order, clean UX
 function showPendingQRPaymentAlert(responseData, currentOrderData) {
     const orderId = responseData.order_id;
@@ -723,7 +754,7 @@ function showPendingQRPaymentAlert(responseData, currentOrderData) {
             </div>
             <div style="display:flex;flex-direction:column;gap:10px;">
                 <button id="continuePayBtn" style="padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#D8A35D,#F4C27F);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 2px 8px rgba(216,163,93,0.3);transition:all 0.15s;">Continue Payment</button>
-                <button id="cancelStartNewBtn" style="padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#374151;font-weight:600;font-size:13px;cursor:pointer;transition:all 0.15s;">Cancel & Start New</button>
+                <button id="cancelStartNewBtn" style="padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#374151;font-weight:600;font-size:13px;cursor:pointer;transition:all 0.15s;">Cancel Previous & Place This Order</button>
             </div>
         </div>
     `;
@@ -754,7 +785,7 @@ function showPendingQRPaymentAlert(responseData, currentOrderData) {
     dialog.querySelector('#cancelStartNewBtn').addEventListener('click', async () => {
         const cancelBtn = dialog.querySelector('#cancelStartNewBtn');
         cancelBtn.disabled = true;
-        cancelBtn.textContent = 'Cancelling...';
+        cancelBtn.textContent = 'Cancelling previous order...';
 
         try {
             const tok = getAuthToken();
@@ -778,12 +809,12 @@ function showPendingQRPaymentAlert(responseData, currentOrderData) {
                 }
             } else {
                 cancelBtn.disabled = false;
-                cancelBtn.textContent = 'Cancel & Start New';
+                cancelBtn.textContent = 'Cancel Previous & Place This Order';
                 showError(result.message || 'Failed to cancel order.');
             }
         } catch (e) {
             cancelBtn.disabled = false;
-            cancelBtn.textContent = 'Cancel & Start New';
+            cancelBtn.textContent = 'Cancel Previous & Place This Order';
             showError('Network error. Please try again.');
         }
     });
@@ -1865,6 +1896,14 @@ function showOrderChoiceDialog(choiceData, orderData, name, phone) {
     content.appendChild(orderList);
     content.appendChild(buttonGroup);
     dialog.appendChild(content);
+
+    // Close when clicking outside the popup content
+    content.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+    dialog.addEventListener('click', () => {
+        dialog.remove();
+    });
 
     document.body.appendChild(dialog);
     console.log('✅ Dialog appended to body');

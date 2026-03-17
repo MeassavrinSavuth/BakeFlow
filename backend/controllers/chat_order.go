@@ -66,6 +66,33 @@ type OrderChoiceRequest struct {
 	PaymentMethod string          `json:"payment_method"`
 }
 
+const maxItemQtyPerOrder = 5
+
+func getMaxItemQtyPerOrder() int {
+	return maxItemQtyPerOrder
+}
+
+func validatePerItemCap(items []ChatOrderItem) (bool, string, int) {
+	capQty := getMaxItemQtyPerOrder()
+	for _, item := range items {
+		if item.Qty <= 0 {
+			name := strings.TrimSpace(item.Name)
+			if name == "" {
+				name = "Unknown item"
+			}
+			return false, name, item.Qty
+		}
+		if item.Qty > capQty {
+			name := strings.TrimSpace(item.Name)
+			if name == "" {
+				name = "Unknown item"
+			}
+			return false, name, item.Qty
+		}
+	}
+	return true, "", 0
+}
+
 // ─── Order Type System ─────────────────────────────────────
 // Clear separation: regular (ready today) vs custom (2-3 days) vs scheduled (future time)
 
@@ -178,6 +205,37 @@ func getLatestPaymentInfo(orderID int) (string, string, bool) {
 		return "", "", false
 	}
 	return strings.ToLower(strings.TrimSpace(method.String)), strings.ToLower(strings.TrimSpace(status.String)), true
+}
+
+func filterOrdersForSelectedPayment(orders []*models.Order, selectedPayment string) []*models.Order {
+	normalized := strings.ToLower(strings.TrimSpace(selectedPayment))
+	if normalized == "" {
+		return orders
+	}
+
+	if normalized != "scan" {
+		return orders
+	}
+
+	filtered := make([]*models.Order, 0, len(orders))
+	for _, order := range orders {
+		if order == nil {
+			continue
+		}
+
+		orderPM := strings.ToLower(strings.TrimSpace(order.PaymentMethod))
+		if orderPM == "scan" {
+			filtered = append(filtered, order)
+			continue
+		}
+
+		latestPM, _, hasPayment := getLatestPaymentInfo(order.ID)
+		if hasPayment && latestPM == "scan" {
+			filtered = append(filtered, order)
+		}
+	}
+
+	return filtered
 }
 
 // CancelPendingQROrder allows a user to cancel their own pending_payment order
@@ -442,6 +500,20 @@ func updateCustomOrder(w http.ResponseWriter, userID string, req OrderChoiceRequ
 		return
 	}
 
+	if ok, itemName, qty := validatePerItemCap(req.Items); !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":     false,
+			"error":       "item_cap_exceeded",
+			"message":     fmt.Sprintf("Maximum %d units per item per order. '%s' has quantity %d.", getMaxItemQtyPerOrder(), itemName, qty),
+			"product":     itemName,
+			"requested":   qty,
+			"max_allowed": getMaxItemQtyPerOrder(),
+		})
+		return
+	}
+
 	existingOrder, err := models.GetOrderByID(orderID)
 	if err != nil || existingOrder == nil {
 		http.Error(w, "order not found", http.StatusNotFound)
@@ -697,6 +769,51 @@ func addItemsToExistingOrder(w http.ResponseWriter, userID string, orderID int, 
 		productQuantityMap[item.Product] = item.Quantity
 	}
 
+	maxQty := getMaxItemQtyPerOrder()
+	for _, newItem := range newItems {
+		if newItem.Qty <= 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":     false,
+				"error":       "invalid_quantity",
+				"message":     fmt.Sprintf("Quantity for '%s' must be at least 1.", newItem.Name),
+				"product":     newItem.Name,
+				"requested":   newItem.Qty,
+				"max_allowed": maxQty,
+			})
+			return
+		}
+
+		if currentQty, exists := productQuantityMap[newItem.Name]; exists {
+			if currentQty+newItem.Qty > maxQty {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success":     false,
+					"error":       "item_cap_exceeded",
+					"message":     fmt.Sprintf("Maximum %d units per item per order. '%s' would become %d.", maxQty, newItem.Name, currentQty+newItem.Qty),
+					"product":     newItem.Name,
+					"requested":   currentQty + newItem.Qty,
+					"max_allowed": maxQty,
+				})
+				return
+			}
+		} else if newItem.Qty > maxQty {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":     false,
+				"error":       "item_cap_exceeded",
+				"message":     fmt.Sprintf("Maximum %d units per item per order. '%s' has quantity %d.", maxQty, newItem.Name, newItem.Qty),
+				"product":     newItem.Name,
+				"requested":   newItem.Qty,
+				"max_allowed": maxQty,
+			})
+			return
+		}
+	}
+
 	// Process new items - merge or insert
 	for _, newItem := range newItems {
 		if existingItemID, exists := productItemMap[newItem.Name]; exists {
@@ -849,6 +966,20 @@ func addItemsToExistingOrder(w http.ResponseWriter, userID string, orderID int, 
 // createNewOrderAfterChoice creates a completely new order
 func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderChoiceRequest) {
 	var orderID int
+
+	if ok, itemName, qty := validatePerItemCap(req.Items); !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":     false,
+			"error":       "item_cap_exceeded",
+			"message":     fmt.Sprintf("Maximum %d units per item per order. '%s' has quantity %d.", getMaxItemQtyPerOrder(), itemName, qty),
+			"product":     itemName,
+			"requested":   qty,
+			"max_allowed": getMaxItemQtyPerOrder(),
+		})
+		return
+	}
 
 	// Calculate totals
 	var subtotal float64
@@ -1011,6 +1142,20 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.Items) == 0 {
 		http.Error(w, "cart is empty", http.StatusBadRequest)
+		return
+	}
+
+	if ok, itemName, qty := validatePerItemCap(req.Items); !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":     false,
+			"error":       "item_cap_exceeded",
+			"message":     fmt.Sprintf("Maximum %d units per item per order. '%s' has quantity %d.", getMaxItemQtyPerOrder(), itemName, qty),
+			"product":     itemName,
+			"requested":   qty,
+			"max_allowed": getMaxItemQtyPerOrder(),
+		})
 		return
 	}
 
@@ -1405,6 +1550,66 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if reason == "add_to_existing" && len(modifiableOrders) > 0 {
+				modifiableOrders = filterOrdersForSelectedPayment(modifiableOrders, req.PaymentMethod)
+				if len(modifiableOrders) == 0 {
+					// No matching active orders for selected payment method; continue creating new order.
+				} else {
+					type OrderSummary struct {
+						ID      int     `json:"id"`
+						Status  string  `json:"status"`
+						Items   int     `json:"items"`
+						Amount  float64 `json:"amount"`
+						Summary string  `json:"summary"`
+					}
+					var summaries []OrderSummary
+					for _, order := range modifiableOrders {
+						// Count actual items from order_items table (more reliable than cached total_items)
+						actualItems := order.TotalItems
+						var count int
+						if err := configs.DB.QueryRow(`SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = $1`, order.ID).Scan(&count); err == nil && count > 0 {
+							actualItems = count
+						}
+						summaries = append(summaries, OrderSummary{
+							ID:      order.ID,
+							Status:  order.Status,
+							Items:   actualItems,
+							Amount:  order.TotalAmount,
+							Summary: fmt.Sprintf("Order #BF-%d • %d items • Ks %.2f", order.ID, actualItems, order.TotalAmount),
+						})
+					}
+
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success":    true,
+						"action":     "ask_user_choice",
+						"message":    "Add to your existing order or start fresh?",
+						"orders":     summaries,
+						"newItems":   req.Items,
+						"order_type": string(orderTypeDetected),
+					})
+					return
+				}
+			}
+
+			// Blocked — clear message to user
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":    false,
+				"error":      "order_blocked",
+				"message":    reason,
+				"order_type": string(orderTypeDetected),
+			})
+			return
+		}
+
+		// Offer choice dialog as a SUGGESTION (not a blocker) if user has modifiable orders
+		if reason == "suggest_add_to_existing" && len(modifiableOrders) > 0 {
+			modifiableOrders = filterOrdersForSelectedPayment(modifiableOrders, req.PaymentMethod)
+			if len(modifiableOrders) == 0 {
+				// Selected payment is scan and no matching scan orders exist; skip suggestion dialog.
+			} else {
 				type OrderSummary struct {
 					ID      int     `json:"id"`
 					Status  string  `json:"status"`
@@ -1414,7 +1619,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 				}
 				var summaries []OrderSummary
 				for _, order := range modifiableOrders {
-					// Count actual items from order_items table (more reliable than cached total_items)
+					// Count actual items from order_items table
 					actualItems := order.TotalItems
 					var count int
 					if err := configs.DB.QueryRow(`SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = $1`, order.ID).Scan(&count); err == nil && count > 0 {
@@ -1434,64 +1639,14 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"success":    true,
 					"action":     "ask_user_choice",
-					"message":    "Add to your existing order or start fresh?",
+					"message":    "You have an existing order. Add to it or create a new one?",
 					"orders":     summaries,
 					"newItems":   req.Items,
 					"order_type": string(orderTypeDetected),
+					"allow_new":  true, // Allow creating new order independently
 				})
 				return
 			}
-
-			// Blocked — clear message to user
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"success":    false,
-				"error":      "order_blocked",
-				"message":    reason,
-				"order_type": string(orderTypeDetected),
-			})
-			return
-		}
-
-		// Offer choice dialog as a SUGGESTION (not a blocker) if user has modifiable orders
-		if reason == "suggest_add_to_existing" && len(modifiableOrders) > 0 {
-			type OrderSummary struct {
-				ID      int     `json:"id"`
-				Status  string  `json:"status"`
-				Items   int     `json:"items"`
-				Amount  float64 `json:"amount"`
-				Summary string  `json:"summary"`
-			}
-			var summaries []OrderSummary
-			for _, order := range modifiableOrders {
-				// Count actual items from order_items table
-				actualItems := order.TotalItems
-				var count int
-				if err := configs.DB.QueryRow(`SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = $1`, order.ID).Scan(&count); err == nil && count > 0 {
-					actualItems = count
-				}
-				summaries = append(summaries, OrderSummary{
-					ID:      order.ID,
-					Status:  order.Status,
-					Items:   actualItems,
-					Amount:  order.TotalAmount,
-					Summary: fmt.Sprintf("Order #BF-%d • %d items • Ks %.2f", order.ID, actualItems, order.TotalAmount),
-				})
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"success":    true,
-				"action":     "ask_user_choice",
-				"message":    "You have an existing order. Add to it or create a new one?",
-				"orders":     summaries,
-				"newItems":   req.Items,
-				"order_type": string(orderTypeDetected),
-				"allow_new":  true, // Allow creating new order independently
-			})
-			return
 		}
 
 		// Phone-based duplicate check
