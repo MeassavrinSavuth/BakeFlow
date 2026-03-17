@@ -6,6 +6,8 @@ export default function AdminPayments() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [payments, setPayments] = useState([]);
     const [filter, setFilter] = useState('pending'); // pending, verified, rejected
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
     const [loading, setLoading] = useState(true);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [confirmStatus, setConfirmStatus] = useState('');
@@ -19,18 +21,48 @@ export default function AdminPayments() {
     };
 
     useEffect(() => {
-        fetchPayments();
+        setPage(1);
     }, [filter]);
 
+    useEffect(() => {
+        fetchPayments();
+    }, [filter, page]);
+
     const fetchPayments = async () => {
+        const PAGE_SIZE = 15;
         setLoading(true);
         try {
-            const res = await fetch(`/api/admin/payments?status=${filter}`);
+            const res = await fetch(`/api/admin/payments?status=${filter}&page=${page}&limit=${PAGE_SIZE}`);
             const data = await res.json();
-            setPayments(Array.isArray(data) ? data : Array.isArray(data?.payments) ? data.payments : []);
-        } catch (error) {
-            console.error("Failed to fetch payments", error);
+
+            // Preferred shape (server-side pagination)
+            if (data && Array.isArray(data.payments)) {
+                setPayments(data.payments.slice(0, PAGE_SIZE));
+                setTotalPages(Number(data.total_pages || 1) || 1);
+                return;
+            }
+
+            // Legacy shape (unpaginated array) — apply client-side pagination
+            if (Array.isArray(data)) {
+                const nextTotalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+                if (page > nextTotalPages) {
+                    setPage(nextTotalPages);
+                    setTotalPages(nextTotalPages);
+                    setPayments([]);
+                    return;
+                }
+                const start = (page - 1) * PAGE_SIZE;
+                setPayments(data.slice(start, start + PAGE_SIZE));
+                setTotalPages(nextTotalPages);
+                return;
+            }
+
             setPayments([]);
+            setTotalPages(1);
+        } catch (error) {
+            console.error('Failed to fetch payments', error);
+            setPayments([]);
+            setTotalPages(1);
         } finally {
             setLoading(false);
         }
@@ -74,8 +106,38 @@ export default function AdminPayments() {
         }
     };
 
+    const getPaginationItems = (current, total, maxVisible = 7) => {
+        if (!Number.isFinite(total) || total <= 1) return [];
+
+        const safeTotal = Math.max(1, Math.floor(total));
+        const safeCurrent = Math.min(Math.max(1, Math.floor(current || 1)), safeTotal);
+
+        if (safeTotal <= maxVisible) {
+            return Array.from({ length: safeTotal }, (_, i) => i + 1);
+        }
+
+        const items = [];
+        const innerSlots = Math.max(0, maxVisible - 2);
+
+        let start = Math.max(2, safeCurrent - Math.floor(innerSlots / 2));
+        let end = start + innerSlots - 1;
+
+        if (end > safeTotal - 1) {
+            end = safeTotal - 1;
+            start = Math.max(2, end - innerSlots + 1);
+        }
+
+        items.push(1);
+        if (start > 2) items.push('ellipsis-left');
+        for (let p = start; p <= end; p += 1) items.push(p);
+        if (end < safeTotal - 1) items.push('ellipsis-right');
+        items.push(safeTotal);
+
+        return items;
+    };
+
     return (
-        <div className="d-flex min-h-screen bg-gray-50">
+        <div className="d-flex vh-100 overflow-hidden bg-gray-50">
             <Head>
                 <title>Payment Verification - Admin</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -86,29 +148,36 @@ export default function AdminPayments() {
 
             <Sidebar open={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} />
 
-            <main className="flex-grow-1 p-4" style={{ marginLeft: sidebarOpen ? '0' : '0' }}>
-                <div className="container-fluid">
-                    <div className="d-flex justify-content-between align-items-center mb-4">
-                        <h1 className="h3 text-gray-800">Payment Verification</h1>
-                        <button className="btn btn-primary" onClick={fetchPayments}>
-                            <i className="bi bi-arrow-clockwise me-2"></i>Refresh
-                        </button>
-                    </div>
-
-                    {/* Filter Tabs */}
-                    <div className="btn-group mb-4">
-                        {['pending', 'verified', 'rejected'].map(status => (
-                            <button
-                                key={status}
-                                className={`btn ${filter === status ? 'btn-primary' : 'btn-outline-primary'}`}
-                                onClick={() => setFilter(status)}
-                            >
-                                {status.charAt(0).toUpperCase() + status.slice(1)}
+            <main className="flex-grow-1 d-flex flex-column overflow-hidden" style={{ marginLeft: sidebarOpen ? '0' : '0' }}>
+                {/* Fixed Header Section */}
+                <div className="p-4 pb-0 bg-white border-bottom shadow-sm z-1">
+                    <div className="container-fluid px-0">
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                            <h1 className="h3 text-gray-800 mb-0">Payment Verification</h1>
+                            <button className="btn btn-dark" onClick={fetchPayments}>
+                                <i className="bi bi-arrow-clockwise me-2"></i>Refresh
                             </button>
-                        ))}
-                    </div>
+                        </div>
 
-                    {/* Payments List */}
+                        {/* Filter Tabs */}
+                        <div className="btn-group mb-3">
+                            {['pending', 'verified', 'rejected'].map(status => (
+                                <button
+                                    key={status}
+                                    className={`btn ${filter === status ? 'btn-dark' : 'btn-outline-dark'}`}
+                                    onClick={() => setFilter(status)}
+                                >
+                                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Scrollable Content Section */}
+                <div className="flex-grow-1 overflow-auto p-4 bg-gray-50">
+                    <div className="container-fluid px-0">
+                        {/* Payments List */}
                     {loading ? (
                         <div className="text-center py-5">Loading...</div>
                     ) : (
@@ -179,6 +248,59 @@ export default function AdminPayments() {
                             )}
                         </div>
                     )}
+                    
+                    {/* Pagination */}
+                    {!loading && totalPages > 1 && (
+                        <div className="d-flex justify-content-center align-items-center gap-3 mt-5 mb-4 flex-wrap">
+                            <div className="text-muted small">Page {page} of {totalPages}</div>
+                            <nav aria-label="Payments pagination">
+                                <ul className="pagination mb-0">
+                                    <li className={`page-item ${page <= 1 ? 'disabled' : ''}`}>
+                                        <button
+                                            className="page-link"
+                                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                            disabled={page <= 1}
+                                        >
+                                            Previous
+                                        </button>
+                                    </li>
+
+                                    {getPaginationItems(page, totalPages).map((item) => {
+                                        if (item === 'ellipsis-left' || item === 'ellipsis-right') {
+                                            return (
+                                                <li key={item} className="page-item disabled" aria-hidden="true">
+                                                    <span className="page-link">…</span>
+                                                </li>
+                                            );
+                                        }
+
+                                        return (
+                                            <li key={item} className={`page-item ${page === item ? 'active' : ''}`}>
+                                                <button
+                                                    className="page-link"
+                                                    onClick={() => setPage(item)}
+                                                    aria-current={page === item ? 'page' : undefined}
+                                                >
+                                                    {item}
+                                                </button>
+                                            </li>
+                                        );
+                                    })}
+
+                                    <li className={`page-item ${page >= totalPages ? 'disabled' : ''}`}>
+                                        <button
+                                            className="page-link"
+                                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                                            disabled={page >= totalPages}
+                                        >
+                                            Next
+                                        </button>
+                                    </li>
+                                </ul>
+                            </nav>
+                        </div>
+                    )}
+                    </div>
                 </div>
             </main>
             <div className={`modal fade ${confirmOpen ? 'show' : ''}`} style={{ display: confirmOpen ? 'block' : 'none' }} tabIndex="-1" role="dialog" aria-hidden={!confirmOpen}>

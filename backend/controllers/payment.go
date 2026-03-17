@@ -220,19 +220,45 @@ func GetPaymentStatusHandler(w http.ResponseWriter, r *http.Request) {
 // AdminGetPayments returns a list of payments, optionally filtered by status
 func AdminGetPayments(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+
+	page := 1
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+
+	limit := 12
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	offset := (page - 1) * limit
+
+	var args []interface{}
+	whereClause := ""
+	if status != "" && status != "all" {
+		whereClause = " WHERE status = $1"
+		args = append(args, status)
+	}
+
+	// Count total records for pagination
+	var total int
+	err := configs.DB.QueryRow("SELECT COUNT(*) FROM payments" + whereClause, args...).Scan(&total)
+	if err != nil {
+		log.Printf("❌ Error counting payments: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Failed to count payments",
+		})
+		return
+	}
 
 	query := `
 		SELECT id, order_id, user_id, amount, method, status, proof_url, created_at
 		FROM payments
-	`
-	var args []interface{}
-
-	if status != "" {
-		query += " WHERE status = $1"
-		args = append(args, status)
-	}
-
-	query += " ORDER BY created_at DESC LIMIT 50"
+	` + whereClause + fmt.Sprintf(" ORDER BY created_at DESC LIMIT %d OFFSET %d", limit, offset)
 
 	rows, err := configs.DB.Query(query, args...)
 	if err != nil {
@@ -267,8 +293,25 @@ func AdminGetPayments(w http.ResponseWriter, r *http.Request) {
 		payments = append(payments, p)
 	}
 
+	// If no payments, ensure it's returned as empty array, not null
+	if payments == nil {
+		payments = []Payment{}
+	}
+
+	totalPages := total / limit
+	if total%limit > 0 {
+		totalPages++
+	}
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(payments)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"payments":    payments,
+		"total_pages": totalPages,
+		"current_page": page,
+	})
 }
 
 // AdminVerifyPayment updates the payment status (approve/reject)
