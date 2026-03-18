@@ -20,6 +20,7 @@ export default function AdminPayments() {
     const [settingsSaving, setSettingsSaving] = useState(false);
     const [qrUploading, setQrUploading] = useState(false);
     const [settingsMessage, setSettingsMessage] = useState('');
+    const [paymentInfoOpen, setPaymentInfoOpen] = useState(true);
     const [paymentSettings, setPaymentSettings] = useState({
         qr_code_image_url: '',
         receiver_name: '',
@@ -45,6 +46,26 @@ export default function AdminPayments() {
     useEffect(() => {
         fetchPaymentSettings();
     }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            const raw = window.localStorage.getItem('admin_payments_info_open');
+            if (raw === '0') setPaymentInfoOpen(false);
+            if (raw === '1') setPaymentInfoOpen(true);
+        } catch {
+            // ignore storage errors
+        }
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            window.localStorage.setItem('admin_payments_info_open', paymentInfoOpen ? '1' : '0');
+        } catch {
+            // ignore storage errors
+        }
+    }, [paymentInfoOpen]);
 
     const fetchPayments = async () => {
         const PAGE_SIZE = 15;
@@ -309,10 +330,20 @@ export default function AdminPayments() {
                                     {t('paymentVerificationSubtitle')}
                                 </p>
                             </div>
-                            <button className="btn btn-dark px-3" style={{ borderRadius: '12px', height: '42px', fontWeight: 600 }} onClick={fetchPayments}>
-                                <i className="bi bi-arrow-clockwise me-2"></i>
-                                {t('refresh')}
-                            </button>
+                            <div className="d-flex align-items-center gap-2">
+                                <button
+                                    className="btn btn-outline-secondary px-3"
+                                    style={{ borderRadius: '12px', height: '42px', fontWeight: 600 }}
+                                    onClick={() => setPaymentInfoOpen((v) => !v)}
+                                >
+                                    <i className={`bi ${paymentInfoOpen ? 'bi-eye-slash' : 'bi-layout-text-window-reverse'} me-2`}></i>
+                                    {paymentInfoOpen ? t('closePaymentInfo') : t('showPaymentInfo')}
+                                </button>
+                                <button className="btn btn-dark px-3" style={{ borderRadius: '12px', height: '42px', fontWeight: 600 }} onClick={fetchPayments}>
+                                    <i className="bi bi-arrow-clockwise me-2"></i>
+                                    {t('refresh')}
+                                </button>
+                            </div>
                         </div>
 
                         <div
@@ -361,7 +392,19 @@ export default function AdminPayments() {
                                 );
                             })}
                         </div>
-                        <div className="row g-4 mb-4">
+                        <div
+                            style={{
+                                position: 'relative',
+                                maxHeight: paymentInfoOpen ? '1200px' : '0px',
+                                opacity: paymentInfoOpen ? 1 : 0,
+                                transform: paymentInfoOpen ? 'translateY(0)' : 'translateY(-8px)',
+                                overflow: 'hidden',
+                                transition: 'max-height .35s ease, opacity .24s ease, transform .24s ease',
+                                marginBottom: paymentInfoOpen ? '1.5rem' : 0,
+                                pointerEvents: paymentInfoOpen ? 'auto' : 'none',
+                            }}
+                        >
+                        <div className="row g-4 mb-0">
                             <div className="col-xl-4">
                                 <div
                                     className="h-100 p-4"
@@ -518,6 +561,7 @@ export default function AdminPayments() {
                                     </div>
                                 </div>
                             </div>
+                        </div>
                         </div>
 
                         <div

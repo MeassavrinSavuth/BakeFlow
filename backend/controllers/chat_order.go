@@ -1099,11 +1099,29 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 					if itemName == "" {
 						itemName = "item"
 					}
+
+					available := 0
+					productName := itemName
+					if stockStatus, stockErr := models.GetProductStockStatus(item.ProductID); stockErr == nil && stockStatus != nil {
+						available = stockStatus.AvailableStock
+						if strings.TrimSpace(stockStatus.ProductName) != "" {
+							productName = stockStatus.ProductName
+						}
+					}
+
+					message := fmt.Sprintf("Sorry, only %d %s available. Please reduce quantity.", available, productName)
+					if available <= 0 {
+						message = fmt.Sprintf("Sorry, %s is out of stock right now.", productName)
+					}
+
 					w.WriteHeader(http.StatusBadRequest)
 					json.NewEncoder(w).Encode(map[string]interface{}{
-						"success": false,
-						"error":   "insufficient_stock",
-						"message": fmt.Sprintf("Sorry, %s is out of stock or has insufficient quantity.", itemName),
+						"success":   false,
+						"error":     "insufficient_stock",
+						"message":   message,
+						"product":   productName,
+						"requested": item.Qty,
+						"available": available,
 					})
 					return
 				}
@@ -1893,11 +1911,29 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 					if itemName == "" {
 						itemName = "item"
 					}
+
+					available := 0
+					productName := itemName
+					if stockStatus, stockErr := models.GetProductStockStatus(item.ProductID); stockErr == nil && stockStatus != nil {
+						available = stockStatus.AvailableStock
+						if strings.TrimSpace(stockStatus.ProductName) != "" {
+							productName = stockStatus.ProductName
+						}
+					}
+
+					message := fmt.Sprintf("Sorry, only %d %s available. Please reduce quantity.", available, productName)
+					if available <= 0 {
+						message = fmt.Sprintf("Sorry, %s is out of stock right now.", productName)
+					}
+
 					w.WriteHeader(http.StatusBadRequest)
 					json.NewEncoder(w).Encode(map[string]interface{}{
-						"success": false,
-						"error":   "insufficient_stock",
-						"message": fmt.Sprintf("Sorry, %s is out of stock or has insufficient quantity.", itemName),
+						"success":   false,
+						"error":     "insufficient_stock",
+						"message":   message,
+						"product":   productName,
+						"requested": item.Qty,
+						"available": available,
 					})
 					return
 				}

@@ -632,7 +632,18 @@ function processOrderSubmission(name, phone, address, notes, deliveryType, userI
             } else {
                 // Handle specific errors (like insufficient stock)
                 if (data && data.error === 'insufficient_stock') {
-                    showError(`Sorry, only ${data.available} ${data.product} available. Please reduce quantity.`);
+                    const available = data.available ?? data.available_stock;
+                    const product = data.product ?? data.product_name;
+
+                    if (data.message && String(data.message).trim()) {
+                        showError(data.message);
+                    } else if (available != null && product) {
+                        showError(`Sorry, only ${available} ${product} available. Please reduce quantity.`);
+                    } else if (available != null) {
+                        showError(`Sorry, only ${available} item(s) available. Please reduce quantity.`);
+                    } else {
+                        showError('Sorry, this item is no longer available in the requested quantity. Please update your order.');
+                    }
                 } else if (data && data.error === 'product_unavailable') {
                     showError(data.message || 'Product is no longer available');
                 } else if (data && data.error === 'pending_qr_payment') {

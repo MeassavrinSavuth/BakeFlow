@@ -125,6 +125,8 @@ const STRINGS = {
     failedToUpdateStatus: 'Failed to update status',
     errorUpdatingStatus: 'Error updating status',
     noDataSuffix: 'not found',
+    showPaymentInfo: 'Show Payment Info',
+    closePaymentInfo: 'Close Payment Info',
   },
   my: {
     orderManagement: 'အော်ဒါ စီမံခန့်ခွဲမှု',
@@ -321,6 +323,8 @@ const STRINGS = {
     failedToUpdateStatus: 'အခြေအနေ အသစ်မပြောင်းနိုင်ပါ',
     errorUpdatingStatus: 'အခြေအနေ ပြောင်းရာတွင် အမှားဖြစ်ပွားခဲ့သည်',
     noDataSuffix: 'မတွေ့ပါ',
+    showPaymentInfo: 'ငွေပေးချေမှု အချက်အလက် ပြမည်',
+    closePaymentInfo: 'ငွေပေးချေမှု အချက်အလက် ပိတ်မည်',
   }
 }
 

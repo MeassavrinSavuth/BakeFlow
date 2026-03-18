@@ -103,7 +103,6 @@ function openProductDetail(productId, editCartItemId = null) {
     document.getElementById('productSheetName').textContent = product.name;
     document.getElementById('productSheetDesc').textContent = product.description || '';
     document.getElementById('productSheetPrice').innerHTML = renderProductSheetPrice(product);
-    document.getElementById('productItemNote').value = currentProductSheet.note;
     document.getElementById('productSheetQty').textContent = currentProductSheet.quantity;
     
     // Update button text for edit mode
@@ -231,21 +230,14 @@ function updateProductSheetButtons() {
  * Append note suggestion to input
  */
 function appendProductNote(note) {
-    const input = document.getElementById('productItemNote');
-    const current = input.value.trim();
+    const current = String(currentProductSheet.note || '').trim();
     if (current) {
-        // Check if note already exists
-        if (!current.toLowerCase().includes(note.toLowerCase())) {
-            input.value = current + ', ' + note;
+        if (!current.toLowerCase().includes(String(note).toLowerCase())) {
+            currentProductSheet.note = current + ', ' + note;
         }
     } else {
-        input.value = note;
+        currentProductSheet.note = note;
     }
-    currentProductSheet.note = input.value;
-    
-    // Visual feedback
-    input.style.borderColor = 'var(--primary)';
-    setTimeout(() => input.style.borderColor = '', 200);
 }
 
 /**
@@ -281,9 +273,6 @@ function confirmAddToCart() {
         updateProductSheetButtons();
         return;
     }
-    
-    const note = document.getElementById('productItemNote').value.trim();
-    currentProductSheet.note = note;
     
     if (currentProductSheet.editingCartItemId) {
         // Update existing cart item

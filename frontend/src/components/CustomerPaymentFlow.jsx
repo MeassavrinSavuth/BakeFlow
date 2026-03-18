@@ -69,10 +69,12 @@ export default function CustomerPaymentFlow({ order }) {
         initializePaymentState();
     }, [order.id, order.status]);
 
-    // Poll for status updates
+    // Poll for status updates (real-time cancel/expire/verify)
     useEffect(() => {
         let interval;
-        if (status === 'verifying') {
+        if (status === 'pending' || status === 'verifying' || status === 'rejected') {
+            // Run once immediately when entering a pollable state
+            checkStatus();
             interval = setInterval(checkStatus, 5000);
         }
         return () => clearInterval(interval);
@@ -108,6 +110,12 @@ export default function CustomerPaymentFlow({ order }) {
                 if (data.proof_url) setUploadedUrl(data.proof_url);
             } else if (data.status === 'rejected') {
                 setStatus('rejected');
+            } else if (data.status === 'cancelled') {
+                setStatus('cancelled');
+            } else if (data.status === 'expired') {
+                setStatus('expired');
+            } else if (data.status === 'pending') {
+                setStatus('verifying');
             }
         } catch (e) {
             console.error("Error checking status", e);

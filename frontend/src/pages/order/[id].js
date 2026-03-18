@@ -4,6 +4,44 @@ import Head from 'next/head';
 import CustomerPaymentFlow from '../../components/CustomerPaymentFlow';
 import { Package, MapPin, Truck, Clock } from 'lucide-react';
 
+function normalizeOrderPayload(data) {
+    const rawItems = Array.isArray(data?.items) ? data.items : [];
+    const items = rawItems.map((item) => {
+        const quantity = Number(item.quantity ?? item.qty ?? 0);
+        const price = Number(item.price ?? item.unit_price ?? 0);
+        const name = item.product || item.name || item.title || 'Item';
+        return {
+            ...item,
+            quantity,
+            price,
+            product: name,
+            name
+        };
+    });
+
+    const itemsSubtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const rawSubtotal = Number(data?.subtotal);
+    const rawDeliveryFee = Number(data?.delivery_fee);
+    const rawDiscount = Number(data?.discount);
+    const subtotal = Number.isFinite(rawSubtotal) && rawSubtotal > 0 ? rawSubtotal : itemsSubtotal;
+    const deliveryFee = Number.isFinite(rawDeliveryFee) ? rawDeliveryFee : 0;
+    const discount = Number.isFinite(rawDiscount) ? rawDiscount : 0;
+    const fieldTotal = subtotal + deliveryFee - discount;
+    const rawTotalAmount = Number(data?.total_amount ?? data?.total);
+    const totalAmount = Number.isFinite(rawTotalAmount) && rawTotalAmount > 0
+        ? rawTotalAmount
+        : (fieldTotal > 0 ? fieldTotal : itemsSubtotal);
+
+    return {
+        ...data,
+        items,
+        subtotal,
+        delivery_fee: deliveryFee,
+        discount,
+        total_amount: totalAmount
+    };
+}
+
 export default function OrderPage() {
     const router = useRouter();
     const { id } = router.query;
@@ -14,51 +52,36 @@ export default function OrderPage() {
     useEffect(() => {
         if (!id) return;
 
-        fetch(`/api/orders/${id}`)
-            .then((res) => {
+        let cancelled = false;
+
+        const loadOrder = async (silent = false) => {
+            try {
+                const res = await fetch(`/api/orders/${id}`);
                 if (!res.ok) throw new Error('Order not found');
-                return res.json();
-            })
-            .then((data) => {
-                const rawItems = Array.isArray(data.items) ? data.items : [];
-                const items = rawItems.map((item) => {
-                    const quantity = Number(item.quantity ?? item.qty ?? 0);
-                    const price = Number(item.price ?? item.unit_price ?? 0);
-                    const name = item.product || item.name || item.title || 'Item';
-                    return {
-                        ...item,
-                        quantity,
-                        price,
-                        product: name,
-                        name
-                    };
-                });
-                const itemsSubtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                const rawSubtotal = Number(data.subtotal);
-                const rawDeliveryFee = Number(data.delivery_fee);
-                const rawDiscount = Number(data.discount);
-                const subtotal = Number.isFinite(rawSubtotal) && rawSubtotal > 0 ? rawSubtotal : itemsSubtotal;
-                const deliveryFee = Number.isFinite(rawDeliveryFee) ? rawDeliveryFee : 0;
-                const discount = Number.isFinite(rawDiscount) ? rawDiscount : 0;
-                const fieldTotal = subtotal + deliveryFee - discount;
-                const rawTotalAmount = Number(data.total_amount ?? data.total);
-                const totalAmount = Number.isFinite(rawTotalAmount) && rawTotalAmount > 0
-                    ? rawTotalAmount
-                    : (fieldTotal > 0 ? fieldTotal : itemsSubtotal);
-                setOrder({
-                    ...data,
-                    items,
-                    subtotal,
-                    delivery_fee: deliveryFee,
-                    discount,
-                    total_amount: totalAmount
-                });
-                setLoading(false);
-            })
-            .catch((err) => {
-                setError(err.message);
-                setLoading(false);
-            });
+                const data = await res.json();
+                if (cancelled) return;
+                setOrder(normalizeOrderPayload(data));
+                setError(null);
+                if (!silent) setLoading(false);
+            } catch (err) {
+                if (cancelled) return;
+                setError(err.message || 'Failed to load order');
+                if (!silent) setLoading(false);
+            }
+        };
+
+        // Initial load
+        loadOrder(false);
+
+        // Real-time-ish polling for admin updates (e.g., COD cancellation)
+        const intervalId = setInterval(() => {
+            loadOrder(true);
+        }, 5000);
+
+        return () => {
+            cancelled = true;
+            clearInterval(intervalId);
+        };
     }, [id]);
 
     if (loading) {
