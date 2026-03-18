@@ -392,6 +392,8 @@ function updateCart() {
     const barSubtotalEl = document.getElementById('barSubtotal');
     const barDiscountEl = document.getElementById('barDiscount');
     const barDiscountRowEl = document.getElementById('barDiscountRow');
+    const barDeliveryFeeRowEl = document.getElementById('barDeliveryFeeRow');
+    const barDeliveryFeeEl = document.getElementById('barDeliveryFee');
     const barTotalEl = document.getElementById('barTotal');
     const barCheckoutEl = document.getElementById('barCheckout');
     const barSavingsEl = document.getElementById('barSavings');
@@ -400,12 +402,26 @@ function updateCart() {
     if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${total.toFixed(2)}`;
     if (barDiscountEl) barDiscountEl.textContent = `-Ks ${(0).toFixed(2)}`;
     if (barDiscountRowEl) barDiscountRowEl.style.display = 'none';
+    if (barDeliveryFeeRowEl) barDeliveryFeeRowEl.style.display = 'none';
+    if (barDeliveryFeeEl) barDeliveryFeeEl.textContent = `Ks ${(0).toFixed(2)}`;
     if (barTotalEl) barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
     if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${total.toFixed(2)}`;
     if (barCheckoutEl) barCheckoutEl.disabled = itemCount === 0;
 
+    const placeBtn = document.getElementById('placeOrderBtn');
+    const placeSpan = placeBtn ? placeBtn.querySelector('span') : null;
+    if (placeSpan) {
+        const base = window.__pendingPreorder ? 'Place Custom Cake Order' : 'Place Order';
+        placeSpan.textContent = base;
+    }
+
     if (itemCount > 0 && typeof window.calculateCheckoutWithPromotions === 'function') {
-        window.calculateCheckoutWithPromotions(checkoutItems)
+        const deliveryType = (window.getDeliveryType ? window.getDeliveryType() : '') || '';
+        const township = document.getElementById('customerTownship')?.value.trim() || '';
+        const legacyAddress = document.getElementById('customerAddress')?.value.trim() || '';
+        const feeAddress = township || legacyAddress;
+
+        window.calculateCheckoutWithPromotions(checkoutItems, { deliveryType, address: feeAddress })
             .then(checkout => {
                 const discount = Number(checkout?.discount || 0);
                 const subtotalRaw = Number(checkout?.subtotal);
@@ -424,18 +440,33 @@ function updateCart() {
                 if (useCheckout) {
                     window.currentCheckout = checkout;
                     const subtotal = Number.isFinite(subtotalRaw) ? subtotalRaw : total;
-                    const finalTotal = Number.isFinite(totalRaw) ? totalRaw : total;
+                    const deliveryFee = Number(checkout?.delivery_fee || checkout?.deliveryFee || 0);
+                    const finalTotal = Number.isFinite(totalRaw) ? totalRaw : (subtotal - discount + deliveryFee);
+
                     if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${subtotal.toFixed(2)}`;
                     if (barDiscountEl) barDiscountEl.textContent = `-Ks ${discount.toFixed(2)}`;
                     if (barDiscountRowEl) barDiscountRowEl.style.display = hasPromo ? 'flex' : 'none';
-                    if (barTotalEl) barTotalEl.textContent = `Ks ${finalTotal.toFixed(2)}`;
-                    if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${finalTotal.toFixed(2)}`;
+
+                    const isDelivery = String(deliveryType || '').toLowerCase() === 'delivery';
+                    if (barDeliveryFeeRowEl) barDeliveryFeeRowEl.style.display = isDelivery ? 'flex' : 'none';
+                    if (barDeliveryFeeEl) barDeliveryFeeEl.textContent = `Ks ${Number(deliveryFee).toFixed(2)}`;
+
+                    if (barTotalEl) barTotalEl.textContent = `Ks ${Number(finalTotal).toFixed(2)}`;
+                    if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${Number(finalTotal).toFixed(2)}`;
                     if (barSavingsEl) {
                         barSavingsEl.style.display = 'none';
                         barSavingsEl.textContent = '';
                     }
+
+                    const placeBtn = document.getElementById('placeOrderBtn');
+                    const placeSpan = placeBtn ? placeBtn.querySelector('span') : null;
+                    if (placeSpan) {
+                        const base = window.__pendingPreorder ? 'Place Custom Cake Order' : 'Place Order';
+                        placeSpan.textContent = `${base} • Ks ${Number(finalTotal).toFixed(2)}`;
+                    }
+
                     if (pendingSchedule && barTotalEl) {
-                        barTotalEl.textContent = `Ks ${finalTotal.toFixed(2)}`;
+                        barTotalEl.textContent = `Ks ${Number(finalTotal).toFixed(2)}`;
                     }
                     return;
                 }
@@ -444,6 +475,8 @@ function updateCart() {
                 if (barSubtotalEl) barSubtotalEl.textContent = `Ks ${total.toFixed(2)}`;
                 if (barDiscountEl) barDiscountEl.textContent = `-Ks ${(0).toFixed(2)}`;
                 if (barDiscountRowEl) barDiscountRowEl.style.display = 'none';
+                if (barDeliveryFeeRowEl) barDeliveryFeeRowEl.style.display = 'none';
+                if (barDeliveryFeeEl) barDeliveryFeeEl.textContent = `Ks ${(0).toFixed(2)}`;
                 if (barTotalEl) barTotalEl.textContent = `Ks ${total.toFixed(2)}`;
                 if (barCheckoutEl) barCheckoutEl.textContent = `Checkout • Ks ${total.toFixed(2)}`;
                 if (barSavingsEl) {

@@ -306,6 +306,7 @@
     border-top: 1px solid var(--gray-200);
     padding: var(--space-md) var(--space-md) calc(var(--space-md) + var(--safe-area-bottom));
     display: none;
+    z-index: 200;
     box-shadow: 0 -4px 20px rgba(26, 23, 20, 0.08);
 }
 

@@ -8,6 +8,202 @@ let geo = null;
 let map = null;
 let marker = null;
 let phoneInputInitialized = false;
+let townshipAutocompleteInitialized = false;
+
+const TOWNSHIP_OPTIONS = [
+    'Kyimyindaing',
+    'Ahlon',
+    'Sanchaung',
+    'Kamayut',
+    'Lanmadaw',
+    'Hlaing',
+    'Mayangon',
+    'Twante',
+    'Kyauktada',
+    'Bahan',
+    'Latha',
+    'Pabedan',
+    'Dagon'
+];
+
+function guessTownshipFromAddress(text) {
+    const v = String(text || '').toLowerCase();
+    if (!v) return '';
+    const hit = TOWNSHIP_OPTIONS.find(t => v.includes(t.toLowerCase()));
+    return hit || '';
+}
+
+function syncStructuredAddressFromLegacy(text) {
+    const legacy = String(text || '').trim();
+    if (!legacy) return;
+
+    const roadEl = document.getElementById('customerRoad');
+    if (roadEl && !String(roadEl.value || '').trim()) {
+        roadEl.value = legacy;
+    }
+
+    const townshipEl = document.getElementById('customerTownship');
+    if (townshipEl && !String(townshipEl.value || '').trim()) {
+        const guess = guessTownshipFromAddress(legacy);
+        if (guess) townshipEl.value = guess;
+    }
+}
+
+function buildAddressQueryForSearch() {
+    const road = document.getElementById('customerRoad')?.value.trim() || '';
+    const township = document.getElementById('customerTownship')?.value.trim() || '';
+    const legacy = document.getElementById('customerAddress')?.value.trim() || '';
+    return (road || township) ? [road, township].filter(Boolean).join(', ') : legacy;
+}
+
+function initTownshipAutocomplete() {
+    if (townshipAutocompleteInitialized) return;
+
+    const input = document.getElementById('customerTownship');
+    const list = document.getElementById('townshipDropdown');
+    if (!input || !list) return;
+
+    townshipAutocompleteInitialized = true;
+
+    let activeIndex = -1;
+    let currentItems = [];
+
+    const closeList = () => {
+        list.style.display = 'none';
+        list.innerHTML = '';
+        activeIndex = -1;
+        currentItems = [];
+        input.setAttribute('aria-expanded', 'false');
+    };
+
+    const openList = () => {
+        list.style.display = 'block';
+        input.setAttribute('aria-expanded', 'true');
+    };
+
+    const setActive = (idx) => {
+        activeIndex = idx;
+        const nodes = Array.from(list.querySelectorAll('[data-option="1"]'));
+        nodes.forEach((n, i) => {
+            if (i === activeIndex) {
+                n.classList.add('active');
+                n.setAttribute('aria-selected', 'true');
+                n.scrollIntoView({ block: 'nearest' });
+            } else {
+                n.classList.remove('active');
+                n.setAttribute('aria-selected', 'false');
+            }
+        });
+    };
+
+    const choose = (value) => {
+        input.value = value;
+        closeList();
+        if (typeof window.updateCart === 'function') window.updateCart();
+    };
+
+    const render = () => {
+        const q = String(input.value || '').trim().toLowerCase();
+        const matches = q
+            ? TOWNSHIP_OPTIONS.filter(t => t.toLowerCase().includes(q))
+            : TOWNSHIP_OPTIONS.slice();
+
+        list.innerHTML = '';
+        activeIndex = -1;
+        currentItems = matches;
+
+        if (!matches.length) {
+            const empty = document.createElement('div');
+            empty.className = 'bf-autocomplete-empty';
+            empty.textContent = 'No results found';
+            list.appendChild(empty);
+            openList();
+            return;
+        }
+
+        matches.forEach((t) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'bf-autocomplete-item';
+            btn.textContent = t;
+            btn.setAttribute('role', 'option');
+            btn.setAttribute('aria-selected', 'false');
+            btn.setAttribute('data-option', '1');
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                choose(t);
+            });
+            list.appendChild(btn);
+        });
+
+        openList();
+    };
+
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
+
+    input.addEventListener('focus', () => {
+        render();
+    });
+
+    input.addEventListener('input', () => {
+        render();
+        if (typeof window.updateCart === 'function') window.updateCart();
+    });
+
+    input.addEventListener('keydown', (e) => {
+        const isOpen = list.style.display !== 'none';
+        const hasOptions = currentItems.length > 0;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (!isOpen) render();
+            if (!hasOptions) return;
+            const next = Math.min((activeIndex < 0 ? -1 : activeIndex) + 1, currentItems.length - 1);
+            setActive(next);
+            return;
+        }
+
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!isOpen) render();
+            if (!hasOptions) return;
+            const next = Math.max((activeIndex < 0 ? currentItems.length : activeIndex) - 1, 0);
+            setActive(next);
+            return;
+        }
+
+        if (e.key === 'Enter') {
+            if (isOpen && activeIndex >= 0 && currentItems[activeIndex]) {
+                e.preventDefault();
+                choose(currentItems[activeIndex]);
+            }
+            return;
+        }
+
+        if (e.key === 'Escape') {
+            if (isOpen) {
+                e.preventDefault();
+                closeList();
+            }
+        }
+    });
+
+    input.addEventListener('blur', () => {
+        window.setTimeout(() => {
+            const active = document.activeElement;
+            if (active && list.contains(active)) return;
+            closeList();
+        }, 80);
+    });
+
+    document.addEventListener('mousedown', (e) => {
+        if (e.target === input) return;
+        if (list.contains(e.target)) return;
+        closeList();
+    });
+}
 
 // ========== Delivery Form ==========
 function openDeliveryForm() {
@@ -39,6 +235,7 @@ function openDeliveryForm() {
     if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
     if (window.ensurePaymentMethodDefault) window.ensurePaymentMethodDefault();
     updatePhoneUi();
+    initTownshipAutocomplete();
 }
 
 function backToCart() {
@@ -62,16 +259,25 @@ function selectDeliveryType(type) {
     const sel = document.querySelector(`[data-type="${type}"]`);
     sel.classList.add('selected');
     sel.setAttribute('aria-checked', 'true');
-    
+
     const addressGroup = document.getElementById('addressGroup');
-    const addressInput = document.getElementById('customerAddress');
+    const buildingEl = document.getElementById('customerBuilding');
+    const roadEl = document.getElementById('customerRoad');
+    const townshipEl = document.getElementById('customerTownship');
+
     if (type === 'delivery') {
         addressGroup.style.display = 'block';
-        addressInput.required = true;
+        if (buildingEl) buildingEl.required = false;
+        if (roadEl) roadEl.required = true;
+        if (townshipEl) townshipEl.required = true;
     } else {
         addressGroup.style.display = 'none';
-        addressInput.required = false;
+        if (buildingEl) buildingEl.required = false;
+        if (roadEl) roadEl.required = false;
+        if (townshipEl) townshipEl.required = false;
     }
+
+    if (typeof window.updateCart === 'function') window.updateCart();
 }
 
 // ========== Location & Map ==========
@@ -92,6 +298,7 @@ async function useMyLocation() {
         const { latitude: lat, longitude: lon } = pos.coords;
         const address = await reverseGeocode(lat, lon);
         document.getElementById('customerAddress').value = address;
+        syncStructuredAddressFromLegacy(address);
         selectDeliveryType('delivery');
         document.getElementById('addressGroup').style.display = 'block';
         geo = { lat, lon, address };
@@ -111,10 +318,10 @@ async function reverseGeocode(lat, lon) {
 }
 
 async function findOnMap() {
-    const q = document.getElementById('customerAddress').value.trim();
-    if (!q) { 
-        showError('Enter an address to find on map'); 
-        return; 
+    const q = buildAddressQueryForSearch();
+    if (!q) {
+        showError('Enter a road and township (or use map/location)');
+        return;
     }
     
     try {
@@ -128,6 +335,7 @@ async function findOnMap() {
         const { lat, lon, display_name } = list[0];
         const latNum = parseFloat(lat), lonNum = parseFloat(lon);
         document.getElementById('customerAddress').value = display_name;
+        syncStructuredAddressFromLegacy(display_name);
         geo = { lat: latNum, lon: lonNum, address: display_name };
         selectDeliveryType('delivery');
         document.getElementById('addressGroup').style.display = 'block';
@@ -152,6 +360,7 @@ function showMap(lat, lon) {
             const p = marker.getLatLng();
             const address = await reverseGeocode(p.lat, p.lng);
             document.getElementById('customerAddress').value = address;
+            syncStructuredAddressFromLegacy(address);
             geo = { lat: p.lat, lon: p.lng, address };
         });
     } else {
@@ -222,7 +431,7 @@ function updatePhoneUi() {
     const normalized = normalizeMyanmarPhoneE164(raw);
     const isValid = !!normalized;
 
-    placeBtn.disabled = !isValid;
+    placeBtn.disabled = false;
 
     if (errEl) {
         if (raw.trim() && !isValid) {

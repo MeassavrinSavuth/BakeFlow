@@ -606,12 +606,21 @@ func updateCustomOrder(w http.ResponseWriter, userID string, req OrderChoiceRequ
 		address = existingOrder.Address
 	}
 
+	deliveryFee := existingOrder.DeliveryFee
+	if fee, ok := calculateDeliveryFeeStrict(deliveryType, address); ok {
+		deliveryFee = fee
+	}
+	total := subtotal - existingOrder.Discount + deliveryFee
+	if total < 0 {
+		total = 0
+	}
+
 	_, err = configs.DB.Exec(`
 		UPDATE orders
-		SET total_items = $1, subtotal = $2, total_amount = $2,
-		    customer_name = $3, delivery_type = $4, address = $5
-		WHERE id = $6
-	`, totalItems, subtotal, customerName, deliveryType, address, orderID)
+		SET total_items = $1, subtotal = $2, delivery_fee = $3, total_amount = $4,
+		    customer_name = $5, delivery_type = $6, address = $7
+		WHERE id = $8
+	`, totalItems, subtotal, deliveryFee, total, customerName, deliveryType, address, orderID)
 	if err != nil {
 		log.Printf("⚠️  updateCustomOrder: failed to update order totals: %v", err)
 	}
@@ -626,9 +635,9 @@ func updateCustomOrder(w http.ResponseWriter, userID string, req OrderChoiceRequ
 		"message":       fmt.Sprintf("✅ Custom order #BF-%d updated!", orderID),
 		"action":        "custom_order_updated",
 		"subtotal":      subtotal,
-		"total":         subtotal,
-		"total_amount":  subtotal,
-		"delivery_fee":  0,
+		"total":         total,
+		"total_amount":  total,
+		"delivery_fee":  deliveryFee,
 		"discount":      0,
 		"delivery_type": deliveryType,
 		"address":       address,
@@ -653,7 +662,7 @@ func updateCustomOrder(w http.ResponseWriter, userID string, req OrderChoiceRequ
 			}
 		}
 		title := "Custom Order Updated"
-		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f", orderID, itemSummary, subtotal)
+		subtitle := fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f", orderID, itemSummary, total)
 		buttons := []Button{
 			{Type: "postback", Title: "Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", orderID)},
 		}
@@ -1016,6 +1025,19 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 		totalItems += item.Qty
 	}
 
+	deliveryFee, feeOK := calculateDeliveryFeeStrict(req.DeliveryType, req.Address)
+	if strings.ToLower(strings.TrimSpace(req.DeliveryType)) == "delivery" && !feeOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "invalid_township",
+			"message": "Please select a valid township for delivery.",
+		})
+		return
+	}
+	total := subtotal + deliveryFee
+
 	customerInfo := strings.TrimSpace(req.CustomerName)
 	if customerInfo == "" {
 		customerInfo = "Customer"
@@ -1029,18 +1051,18 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 	// Insert new order
 	insertQuery := `
 		INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, order_type, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 0, $6, $7, $8, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 		RETURNING id
 	`
 
-	err := configs.DB.QueryRow(insertQuery, customerInfo, req.DeliveryType, req.Address, status, totalItems, subtotal, userID, detectedType).Scan(&orderID)
+	err := configs.DB.QueryRow(insertQuery, customerInfo, req.DeliveryType, req.Address, status, totalItems, subtotal, deliveryFee, total, userID, detectedType).Scan(&orderID)
 	if err != nil {
 		// Fallback without order_type column
 		err = configs.DB.QueryRow(`
 			INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, 0, $6, $7, NOW())
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
 			RETURNING id
-		`, customerInfo, req.DeliveryType, req.Address, status, totalItems, subtotal, userID).Scan(&orderID)
+		`, customerInfo, req.DeliveryType, req.Address, status, totalItems, subtotal, deliveryFee, total, userID).Scan(&orderID)
 	}
 	if err != nil {
 		log.Printf("❌ Failed to create new order: %v", err)
@@ -1108,9 +1130,9 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 		"message":       fmt.Sprintf("✅ New order #BF-%d created with %d items", orderID, totalItems),
 		"action":        "new_order_created",
 		"subtotal":      subtotal,
-		"total":         subtotal,
-		"total_amount":  subtotal,
-		"delivery_fee":  0,
+		"total":         total,
+		"total_amount":  total,
+		"delivery_fee":  deliveryFee,
 		"discount":      0,
 		"delivery_type": req.DeliveryType,
 		"address":       req.Address,
@@ -1151,14 +1173,14 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 
 		if pmChoice == "scan" {
 			paymentLink := fmt.Sprintf("%s/order/%d?pay=scan", frontendURL, orderID)
-			subtitle = fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f", orderID, itemSummary, subtotal)
+			subtitle = fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f", orderID, itemSummary, total)
 			buttons = []Button{
 				{Type: "web_url", Title: "Pay Now", URL: paymentLink},
 				{Type: "postback", Title: "Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", orderID)},
 				{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"},
 			}
 		} else {
-			subtitle = fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f\n\nPayment: Cash on Delivery. Please prepare exact amount.", orderID, itemSummary, subtotal)
+			subtitle = fmt.Sprintf("Order #BF-%d • %s • Total: Ks %.2f\n\nPayment: Cash on Delivery. Please prepare exact amount.", orderID, itemSummary, total)
 			buttons = []Button{
 				{Type: "postback", Title: "Track Order", Payload: fmt.Sprintf("TRACK_ORDER_%d", orderID)},
 				{Type: "postback", Title: "Need Help?", Payload: "CONTACT_SUPPORT"},
@@ -1454,6 +1476,19 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 	if total < 0 {
 		total = 0
 	}
+
+	deliveryFee, feeOK := calculateDeliveryFeeStrict(req.DeliveryType, req.Address)
+	if strings.ToLower(strings.TrimSpace(req.DeliveryType)) == "delivery" && !feeOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "invalid_township",
+			"message": "Please select a valid township for delivery.",
+		})
+		return
+	}
+	total += deliveryFee
 
 	// Extract promotion ID from applied promotion
 	var promotionID *int
@@ -1762,24 +1797,24 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 	// New insert with promotion fields and order_type
 	insertWithPromotion := `
 		INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, promotion_id, discount, scheduled_for, schedule_type, order_type, payment_method, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
 		RETURNING id
 	`
 
 	insertWithSchedule := `
 		INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, scheduled_for, schedule_type, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 0, $6, $7, $8, $9, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
 		RETURNING id
 	`
 
 	insertLegacy := `
 		INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 0, $6, $7, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
 		RETURNING id
 	`
 
 	// Try insert with promotion columns first (includes payment_method)
-	err = configs.DB.QueryRow(insertWithPromotion, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, total, userID, promotionID, discount, scheduledFor, scheduleType, string(orderTypeDetected), paymentMethodValue).Scan(&orderID)
+	err = configs.DB.QueryRow(insertWithPromotion, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, deliveryFee, total, userID, promotionID, discount, scheduledFor, scheduleType, string(orderTypeDetected), paymentMethodValue).Scan(&orderID)
 	if err != nil {
 		// Backwards compatible fallback if DB columns aren't migrated yet.
 		msg := err.Error()
@@ -1787,16 +1822,16 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 			// payment_method column doesn't exist yet — retry without it
 			insertWithPromotionNoPM := `
 				INSERT INTO orders (customer_name, delivery_type, address, status, total_items, subtotal, delivery_fee, total_amount, sender_id, promotion_id, discount, scheduled_for, schedule_type, order_type, created_at)
-				VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10, $11, $12, $13, NOW())
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
 				RETURNING id
 			`
-			err = configs.DB.QueryRow(insertWithPromotionNoPM, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, total, userID, promotionID, discount, scheduledFor, scheduleType, string(orderTypeDetected)).Scan(&orderID)
+			err = configs.DB.QueryRow(insertWithPromotionNoPM, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, deliveryFee, total, userID, promotionID, discount, scheduledFor, scheduleType, string(orderTypeDetected)).Scan(&orderID)
 		}
 		if err != nil {
 			msg = err.Error()
 			if strings.Contains(msg, "promotion_id") || strings.Contains(msg, "discount") {
 				// Try with scheduling columns
-				err = configs.DB.QueryRow(insertWithSchedule, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID, scheduledFor, scheduleType).Scan(&orderID)
+				err = configs.DB.QueryRow(insertWithSchedule, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, deliveryFee, total, userID, scheduledFor, scheduleType).Scan(&orderID)
 				if err != nil {
 					// Check for scheduling columns not existing
 					if strings.Contains(err.Error(), "scheduled_for") || strings.Contains(err.Error(), "schedule_type") {
@@ -1805,7 +1840,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 							http.Error(w, "Scheduling is not enabled on the database yet. Please apply migration 006_add_order_scheduling.sql", http.StatusBadRequest)
 							return
 						}
-						err = configs.DB.QueryRow(insertLegacy, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID).Scan(&orderID)
+						err = configs.DB.QueryRow(insertLegacy, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, deliveryFee, total, userID).Scan(&orderID)
 					}
 				}
 			} else if strings.Contains(msg, "scheduled_for") || strings.Contains(msg, "schedule_type") {
@@ -1814,7 +1849,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "Scheduling is not enabled on the database yet. Please apply migration 006_add_order_scheduling.sql", http.StatusBadRequest)
 					return
 				}
-				err = configs.DB.QueryRow(insertLegacy, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, userID).Scan(&orderID)
+				err = configs.DB.QueryRow(insertLegacy, customerInfo, req.DeliveryType, req.Address, orderStatus, totalItems, subtotal, deliveryFee, total, userID).Scan(&orderID)
 			}
 		}
 	}
@@ -1883,15 +1918,20 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✅ Order #%d created successfully (type: %s)", orderID, orderTypeDetected)
 
-	// Send response with order type info
+	// Send response with order totals
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":    true,
-		"orderID":    orderID,
-		"order_id":   orderID,
-		"message":    fmt.Sprintf("Order #BF-%d placed successfully!", orderID),
-		"order_type": string(orderTypeDetected),
-		"type_label": getOrderTypeLabel(orderTypeDetected),
+		"success":      true,
+		"orderID":      orderID,
+		"order_id":     orderID,
+		"message":      fmt.Sprintf("Order #BF-%d placed successfully!", orderID),
+		"order_type":   string(orderTypeDetected),
+		"type_label":   getOrderTypeLabel(orderTypeDetected),
+		"subtotal":     subtotal,
+		"discount":     discount,
+		"delivery_fee": deliveryFee,
+		"total":        total,
+		"total_amount": total,
 	})
 
 	// Send confirmation message to user via Messenger (async)

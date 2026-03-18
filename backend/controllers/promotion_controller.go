@@ -26,7 +26,9 @@ type CheckoutCartItem struct {
 
 // CheckoutRequest represents the checkout request
 type CheckoutRequest struct {
-	CartItems []CheckoutCartItem `json:"cartItems"`
+	CartItems     []CheckoutCartItem `json:"cartItems"`
+	DeliveryType  string            `json:"delivery_type"`
+	Address       string            `json:"address"`
 }
 
 // CheckoutResponse represents the checkout response with applied promotion
@@ -37,6 +39,7 @@ type CheckoutResponse struct {
 	AppliedPromotion  *AppliedPromotion   `json:"appliedPromotion,omitempty"`
 	AppliedPromotions []*AppliedPromotion `json:"appliedPromotions,omitempty"`
 	LineItems         []CheckoutLineItem  `json:"lineItems,omitempty"`
+	DeliveryFee       float64             `json:"delivery_fee"`
 	Total             float64             `json:"total"`
 }
 
@@ -196,10 +199,17 @@ func CalculateCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lineItems, discountTotal, appliedPromo, appliedPromos := allocatePromotionsToLineItems(activePromotions, req.CartItems)
-	total := subtotal - discountTotal
-	if total < 0 {
-		total = 0
+	baseTotal := subtotal - discountTotal
+	if baseTotal < 0 {
+		baseTotal = 0
 	}
+
+	deliveryFee := 0.0
+	if fee, ok := calculateDeliveryFeeStrict(req.DeliveryType, req.Address); ok {
+		deliveryFee = fee
+	}
+
+	total := baseTotal + deliveryFee
 
 	for i := range lineItems {
 		lineItems[i].LineSubtotal = float64(lineItems[i].Qty) * lineItems[i].UnitPrice
@@ -220,6 +230,7 @@ func CalculateCheckout(w http.ResponseWriter, r *http.Request) {
 		AppliedPromotion:  appliedPromo,
 		AppliedPromotions: appliedPromos,
 		LineItems:         lineItems,
+		DeliveryFee:       deliveryFee,
 		Total:             total,
 	}
 

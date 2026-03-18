@@ -168,6 +168,51 @@
     font-weight: 600;
 }
 
+.bf-autocomplete {
+    position: relative;
+}
+
+.bf-autocomplete-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background: var(--warm-white);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 30px rgba(26, 23, 20, 0.12);
+    max-height: 240px;
+    overflow: auto;
+    z-index: 2000;
+    padding: 6px;
+}
+
+.bf-autocomplete-item {
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: calc(var(--radius) - 4px);
+    color: var(--gray-800);
+    font-weight: 600;
+    font-size: 14px;
+    background: transparent;
+}
+
+.bf-autocomplete-item:hover {
+    background: rgba(216, 163, 93, 0.10);
+}
+
+.bf-autocomplete-item.active {
+    background: rgba(216, 163, 93, 0.16);
+}
+
+.bf-autocomplete-empty {
+    padding: 10px 12px;
+    color: var(--gray-500);
+    font-size: 13px;
+    font-weight: 600;
+}
+
 /* ========== Radio Group ========== */
 .radio-group {
     display: grid;
@@ -297,7 +342,7 @@
     border: 1px solid var(--gray-200);
     box-shadow: var(--shadow-inner);
     position: relative;
-    z-index: 50;
+    z-index: 1;
 }
 
 /* ========== Segment Tabs ========== */
