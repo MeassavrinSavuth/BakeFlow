@@ -13,6 +13,72 @@ function setPlaces(list) {
     localStorage.setItem(key, JSON.stringify(list));
 }
 
+const TOWNSHIP_OPTIONS = [
+    'Kyimyindaing',
+    'Ahlon',
+    'Sanchaung',
+    'Kamayut',
+    'Lanmadaw',
+    'Hlaing',
+    'Mayangon',
+    'Twante',
+    'Kyauktada',
+    'Bahan',
+    'Latha',
+    'Pabedan',
+    'Dagon'
+];
+
+function guessTownshipFromAddress(text) {
+    const v = String(text || '').toLowerCase();
+    if (!v) return '';
+    const hit = TOWNSHIP_OPTIONS.find(t => v.includes(t.toLowerCase()));
+    return hit || '';
+}
+
+function buildStructuredAddressForSave() {
+    const building = document.getElementById('customerBuilding')?.value.trim() || '';
+    const road = document.getElementById('customerRoad')?.value.trim() || '';
+    const township = document.getElementById('customerTownship')?.value.trim() || '';
+    const legacy = document.getElementById('customerAddress')?.value.trim() || '';
+    return ([building, road, township].filter(Boolean).join(', ') || legacy).trim();
+}
+
+function applyStructuredAddressToForm(address) {
+    const full = String(address || '').trim();
+    const legacyEl = document.getElementById('customerAddress');
+    if (legacyEl) legacyEl.value = full;
+
+    const buildingEl = document.getElementById('customerBuilding');
+    const roadEl = document.getElementById('customerRoad');
+    const townshipEl = document.getElementById('customerTownship');
+
+    const guessTownship = guessTownshipFromAddress(full);
+    if (townshipEl) {
+        if (guessTownship) townshipEl.value = guessTownship;
+        else if (!String(townshipEl.value || '').trim()) townshipEl.value = '';
+    }
+
+    const parts = full.split(',').map(p => p.trim()).filter(Boolean);
+    const filtered = guessTownship
+        ? parts.filter(p => p.toLowerCase() !== guessTownship.toLowerCase())
+        : parts;
+
+    if (filtered.length >= 2) {
+        if (buildingEl) buildingEl.value = filtered[0];
+        if (roadEl) roadEl.value = filtered.slice(1).join(', ');
+        return;
+    }
+
+    if (filtered.length === 1) {
+        if (buildingEl) buildingEl.value = '';
+        if (roadEl) roadEl.value = filtered[0];
+        return;
+    }
+
+    if (roadEl && !String(roadEl.value || '').trim()) roadEl.value = full;
+}
+
 function renderPlaces() {
     const list = getPlaces();
     const wrap = document.getElementById('placesList');
@@ -81,12 +147,12 @@ window.quickUsePlace = function(i) {
     const list = getPlaces();
     const p = list[i];
     if (!p) return;
-    
+
     openDeliveryForm();
     selectDeliveryType('delivery');
     document.getElementById('addressGroup').style.display = 'block';
-    document.getElementById('customerAddress').value = p.address || '';
-    
+    applyStructuredAddressToForm(p.address || '');
+
     const dirEl = document.getElementById('deliveryDirections');
     if (dirEl) dirEl.value = p.directions || '';
     
@@ -104,11 +170,11 @@ window.applyPlace = function(i) {
     const list = getPlaces();
     const p = list[i];
     if (!p) return;
-    
+
     selectDeliveryType('delivery');
     document.getElementById('addressGroup').style.display = 'block';
-    document.getElementById('customerAddress').value = p.address || '';
-    
+    applyStructuredAddressToForm(p.address || '');
+
     const dirEl = document.getElementById('deliveryDirections');
     if (dirEl) dirEl.value = p.directions || '';
     
@@ -169,12 +235,15 @@ function initPlacesSheet() {
     const placeSaveBtn = document.getElementById('placeSaveBtn');
     if (placeSaveBtn) {
         placeSaveBtn.addEventListener('click', () => {
-            const address = (document.getElementById('customerAddress')?.value || '').trim();
+            const address = buildStructuredAddressForSave();
             const directions = (document.getElementById('deliveryDirections')?.value || '').trim();
             const name = (document.getElementById('placeName')?.value || '').trim();
-            
-            if (!address) { showToast('Enter an address first'); return; }
+
+            if (!address) { showToast('Enter road and township first'); return; }
             if (!name) { showToast('Name your place'); return; }
+
+            const legacyEl = document.getElementById('customerAddress');
+            if (legacyEl) legacyEl.value = address;
             
             const list = getPlaces();
             const exists = list.some(p => 

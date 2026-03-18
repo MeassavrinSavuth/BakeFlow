@@ -207,7 +207,11 @@ async function submitOrder() {
 
     const name = document.getElementById('customerName').value.trim();
     const phoneRaw = document.getElementById('customerPhone').value.trim();
-    const address = document.getElementById('customerAddress').value.trim();
+    const building = document.getElementById('customerBuilding')?.value.trim() || '';
+    const road = document.getElementById('customerRoad')?.value.trim() || '';
+    const township = document.getElementById('customerTownship')?.value.trim() || '';
+    const legacyAddress = document.getElementById('customerAddress')?.value.trim() || '';
+    const address = ([building, road, township].filter(Boolean).join(', ') || legacyAddress).trim();
     const notes = document.getElementById('orderNotes').value.trim();
     const deliveryType = window.getDeliveryType();
 
@@ -242,9 +246,14 @@ async function submitOrder() {
         showError('Please select Pick Up or Delivery');
         return;
     }
-    if (deliveryType === 'delivery' && !address) {
-        focusDeliveryField('customerAddress');
-        markFieldInvalid('customerAddress', 'Please enter delivery address');
+    if (deliveryType === 'delivery' && !road) {
+        focusDeliveryField('customerRoad');
+        markFieldInvalid('customerRoad', 'Please enter road');
+        return;
+    }
+    if (deliveryType === 'delivery' && !township) {
+        focusDeliveryField('customerTownship');
+        markFieldInvalid('customerTownship', 'Please select township');
         return;
     }
 
@@ -1171,7 +1180,11 @@ async function submitPreorder(preorder) {
 
     const name = document.getElementById('customerName')?.value.trim() || '';
     const phoneRaw = document.getElementById('customerPhone')?.value.trim() || '';
-    const address = document.getElementById('customerAddress')?.value.trim() || '';
+    const building = document.getElementById('customerBuilding')?.value.trim() || '';
+    const road = document.getElementById('customerRoad')?.value.trim() || '';
+    const township = document.getElementById('customerTownship')?.value.trim() || '';
+    const legacyAddress = document.getElementById('customerAddress')?.value.trim() || '';
+    const address = ([building, road, township].filter(Boolean).join(', ') || legacyAddress).trim();
     const deliveryType = window.getDeliveryType ? window.getDeliveryType() : '';
 
     // ── Inline validation with field highlighting ──
@@ -1205,9 +1218,14 @@ async function submitPreorder(preorder) {
         showError('Please select Pick Up or Delivery');
         return;
     }
-    if (deliveryType === 'delivery' && !address) {
-        focusField('customerAddress');
-        markFieldInvalid('customerAddress', 'Please enter delivery address');
+    if (deliveryType === 'delivery' && !road) {
+        focusField('customerRoad');
+        markFieldInvalid('customerRoad', 'Please enter road');
+        return;
+    }
+    if (deliveryType === 'delivery' && !township) {
+        focusField('customerTownship');
+        markFieldInvalid('customerTownship', 'Please select township');
         return;
     }
 
@@ -1296,7 +1314,14 @@ function resetOrder() {
     }
     document.getElementById('customerName').value = '';
     document.getElementById('customerPhone').value = '';
-    document.getElementById('customerAddress').value = '';
+    const legacy = document.getElementById('customerAddress');
+    if (legacy) legacy.value = '';
+    const b = document.getElementById('customerBuilding');
+    if (b) b.value = '';
+    const r = document.getElementById('customerRoad');
+    if (r) r.value = '';
+    const t = document.getElementById('customerTownship');
+    if (t) t.value = '';
     document.getElementById('orderNotes').value = '';
     backToCart();
     window.updateCart();

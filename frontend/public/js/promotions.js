@@ -540,12 +540,14 @@ function getPromotionBadge(productId) {
 /**
  * Calculate checkout with promotions via backend API
  */
-async function calculateCheckoutWithPromotions(cartItems) {
+async function calculateCheckoutWithPromotions(cartItems, opts) {
     try {
+        const deliveryType = String(opts?.deliveryType || '').trim();
+        const address = String(opts?.address || '').trim();
         const res = await fetch('/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cartItems })
+            body: JSON.stringify({ cartItems, delivery_type: deliveryType, address })
         });
         
         if (!res.ok) {
@@ -561,6 +563,7 @@ async function calculateCheckoutWithPromotions(cartItems) {
         return {
             subtotal,
             discount: 0,
+            delivery_fee: 0,
             total: subtotal,
             appliedPromotion: null,
             appliedPromotions: []

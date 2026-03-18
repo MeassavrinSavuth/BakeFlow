@@ -15,28 +15,72 @@ import (
 
 // calculateDeliveryFee calculates delivery fee based on delivery type
 func calculateDeliveryFee(deliveryType, address string) float64 {
-	if deliveryType == "pickup" {
-		return 0.00
+	fee, _ := calculateDeliveryFeeStrict(deliveryType, address)
+	return fee
+}
+
+var townshipDeliveryFeesMMK = map[string]float64{
+	"kyimyindaing": 0,
+	"ahlon":        2000,
+	"sanchaung":    2000,
+	"kamayut":      2500,
+	"lanmadaw":     2500,
+	"hlaing":       3500,
+	"mayangon":     4500,
+	"twante":       5000,
+	"kyauktada":    5000,
+	"bahan":        5500,
+	"latha":        6000,
+	"pabedan":      6000,
+	"dagon":        7000,
+}
+
+var townshipNames = []string{
+	"Kyimyindaing",
+	"Ahlon",
+	"Sanchaung",
+	"Kamayut",
+	"Lanmadaw",
+	"Hlaing",
+	"Mayangon",
+	"Twante",
+	"Kyauktada",
+	"Bahan",
+	"Latha",
+	"Pabedan",
+	"Dagon",
+}
+
+func extractTownshipFromAddress(address string) (string, bool) {
+	v := strings.ToLower(strings.TrimSpace(address))
+	if v == "" {
+		return "", false
 	}
-
-	// Simple distance-based fee (in production, use Google Maps API)
-	addressLower := strings.ToLower(address)
-
-	// Near locations - $3
-	if strings.Contains(addressLower, "downtown") ||
-		strings.Contains(addressLower, "yangon") ||
-		strings.Contains(addressLower, "pickup at store") {
-		return 3.00
+	for _, t := range townshipNames {
+		if strings.Contains(v, strings.ToLower(t)) {
+			return t, true
+		}
 	}
+	return "", false
+}
 
-	// Far locations - $5
-	if strings.Contains(addressLower, "airport") ||
-		strings.Contains(addressLower, "suburb") {
-		return 5.00
+func calculateDeliveryFeeStrict(deliveryType, address string) (float64, bool) {
+	dt := strings.ToLower(strings.TrimSpace(deliveryType))
+	if dt == "" || dt == "pickup" {
+		return 0, true
 	}
-
-	// Default delivery fee
-	return 4.00
+	if dt != "delivery" {
+		return 0, true
+	}
+	name, ok := extractTownshipFromAddress(address)
+	if !ok {
+		return 0, false
+	}
+	fee, ok := townshipDeliveryFeesMMK[strings.ToLower(name)]
+	if !ok {
+		return 0, false
+	}
+	return fee, true
 }
 
 // calculateOrderTotals calculates subtotal, delivery fee, and total
