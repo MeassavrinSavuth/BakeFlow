@@ -1004,7 +1004,7 @@ export default function PromotionsPage() {
                       )}
 
                       <div className="row mb-3">
-                        <div className="col-md-4">
+                        <div className="col-md-6">
                           <label className="form-label">Start Date</label>
                           <input
                             type="datetime-local"
@@ -1014,7 +1014,7 @@ export default function PromotionsPage() {
                             required
                           />
                         </div>
-                        <div className="col-md-4">
+                        <div className="col-md-6">
                           <label className="form-label">End Date</label>
                           <input
                             type="datetime-local"
@@ -1023,17 +1023,6 @@ export default function PromotionsPage() {
                             onChange={(e) => setFormData({ ...formData, end_at: e.target.value })}
                             required
                           />
-                        </div>
-                        <div className="col-md-4">
-                          <label className="form-label">Priority</label>
-                          <input
-                            type="number"
-                            className="form-control"
-                            value={formData.priority}
-                            onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
-                            required
-                          />
-                          <small className="text-muted">Higher = more important</small>
                         </div>
                       </div>
 
@@ -1092,7 +1081,6 @@ export default function PromotionsPage() {
                             <th>Rules</th>
                             <th>Status</th>
                             <th>Dates</th>
-                            <th>Priority</th>
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -1131,7 +1119,6 @@ export default function PromotionsPage() {
                                   {new Date(promo.start_at).toLocaleDateString()} - {new Date(promo.end_at).toLocaleDateString()}
                                 </small>
                               </td>
-                              <td>{promo.priority}</td>
                               <td>
                                 <div className="d-flex gap-2">
                                   <button

@@ -217,6 +217,110 @@ func GetPaymentStatusHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// GetShopPaymentSettings exposes the active shop QR and receiver details for customer payment page.
+func GetShopPaymentSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := ensureShopPaymentSettingsTable(); err != nil {
+		log.Printf("❌ Failed to ensure shop payment settings table: %v", err)
+	}
+
+	settings, err := models.GetShopPaymentSettings()
+	if err != nil {
+		log.Printf("❌ Failed to load shop payment settings: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"settings": map[string]interface{}{
+				"qr_code_image_url": "",
+				"receiver_name":     "",
+				"receiver_phone":    "",
+				"account_number":    "",
+				"bank_name":         "",
+				"other_details":     "",
+			},
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"settings": settings,
+	})
+}
+
+// AdminGetShopPaymentSettings returns payment settings in admin shape.
+func AdminGetShopPaymentSettings(w http.ResponseWriter, r *http.Request) {
+	GetShopPaymentSettings(w, r)
+}
+
+// AdminUpdateShopPaymentSettings updates shop QR image and receiver details.
+func AdminUpdateShopPaymentSettings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := ensureShopPaymentSettingsTable(); err != nil {
+		log.Printf("❌ Failed to ensure shop payment settings table: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to initialize payment settings storage",
+		})
+		return
+	}
+
+	var req struct {
+		QRCodeImageURL string `json:"qr_code_image_url"`
+		ReceiverName   string `json:"receiver_name"`
+		ReceiverPhone  string `json:"receiver_phone"`
+		AccountNumber  string `json:"account_number"`
+		BankName       string `json:"bank_name"`
+		OtherDetails   string `json:"other_details"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid request body",
+		})
+		return
+	}
+
+	req.QRCodeImageURL = strings.TrimSpace(req.QRCodeImageURL)
+	if req.QRCodeImageURL == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "qr_code_image_url is required",
+		})
+		return
+	}
+
+	settingsInput := models.ShopPaymentSettings{
+		QRCodeImageURL: req.QRCodeImageURL,
+		ReceiverName:   truncateRunes(strings.TrimSpace(req.ReceiverName), 120),
+		ReceiverPhone:  truncateRunes(strings.TrimSpace(req.ReceiverPhone), 60),
+		AccountNumber:  truncateRunes(strings.TrimSpace(req.AccountNumber), 80),
+		BankName:       truncateRunes(strings.TrimSpace(req.BankName), 120),
+		OtherDetails:   truncateRunes(strings.TrimSpace(req.OtherDetails), 800),
+	}
+
+	settings, err := models.UpsertShopPaymentSettings(settingsInput)
+	if err != nil {
+		log.Printf("❌ Failed to update shop payment settings: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to save payment settings",
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"message":  "Payment settings updated",
+		"settings": settings,
+	})
+}
+
 // AdminGetPayments returns a list of payments, optionally filtered by status
 func AdminGetPayments(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
@@ -244,7 +348,7 @@ func AdminGetPayments(w http.ResponseWriter, r *http.Request) {
 
 	// Count total records for pagination
 	var total int
-	err := configs.DB.QueryRow("SELECT COUNT(*) FROM payments" + whereClause, args...).Scan(&total)
+	err := configs.DB.QueryRow("SELECT COUNT(*) FROM payments"+whereClause, args...).Scan(&total)
 	if err != nil {
 		log.Printf("❌ Error counting payments: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -308,8 +412,8 @@ func AdminGetPayments(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"payments":    payments,
-		"total_pages": totalPages,
+		"payments":     payments,
+		"total_pages":  totalPages,
 		"current_page": page,
 	})
 }
@@ -567,4 +671,43 @@ func isPostalCodePart(value string) bool {
 		}
 	}
 	return len(value) >= 4 && len(value) <= 6
+}
+
+func truncateRunes(value string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max])
+}
+
+func ensureShopPaymentSettingsTable() error {
+	if configs.DB == nil {
+		return sql.ErrConnDone
+	}
+	_, err := configs.DB.Exec(`
+		CREATE TABLE IF NOT EXISTS shop_payment_settings (
+			id SERIAL PRIMARY KEY,
+			qr_code_image_url TEXT NOT NULL DEFAULT '',
+			receiver_name TEXT NOT NULL DEFAULT '',
+			receiver_phone TEXT NOT NULL DEFAULT '',
+			account_number TEXT NOT NULL DEFAULT '',
+			bank_name TEXT NOT NULL DEFAULT '',
+			other_details TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = configs.DB.Exec(`
+		INSERT INTO shop_payment_settings (id, qr_code_image_url, receiver_name, receiver_phone, account_number, bank_name, other_details)
+		SELECT 1, '', '', '', '', '', ''
+		WHERE NOT EXISTS (SELECT 1 FROM shop_payment_settings)
+	`)
+	return err
 }

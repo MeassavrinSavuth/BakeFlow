@@ -93,6 +93,33 @@ func validatePerItemCap(items []ChatOrderItem) (bool, string, int) {
 	return true, "", 0
 }
 
+type stockDeduction struct {
+	ProductID int
+	Quantity  int
+}
+
+func rollbackCreatedOrder(orderID int, deductions []stockDeduction) {
+	if orderID <= 0 {
+		return
+	}
+
+	for _, d := range deductions {
+		if d.ProductID <= 0 || d.Quantity <= 0 {
+			continue
+		}
+		if err := models.RestoreStock(d.ProductID, d.Quantity, orderID, "order_rollback_after_stock_failure"); err != nil {
+			log.Printf("⚠️ Failed to restore stock during rollback (order=%d, product=%d, qty=%d): %v", orderID, d.ProductID, d.Quantity, err)
+		}
+	}
+
+	if _, err := configs.DB.Exec(`DELETE FROM order_items WHERE order_id = $1`, orderID); err != nil {
+		log.Printf("⚠️ Failed to delete order_items during rollback for order #%d: %v", orderID, err)
+	}
+	if _, err := configs.DB.Exec(`DELETE FROM orders WHERE id = $1`, orderID); err != nil {
+		log.Printf("⚠️ Failed to delete order during rollback for order #%d: %v", orderID, err)
+	}
+}
+
 // ─── Order Type System ─────────────────────────────────────
 // Clear separation: regular (ready today) vs custom (2-3 days) vs scheduled (future time)
 
@@ -1024,6 +1051,7 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 	log.Printf("📦 New order #%d created", orderID)
 
 	// Insert order items
+	deductions := make([]stockDeduction, 0, len(req.Items))
 	for _, item := range req.Items {
 		_, err = configs.DB.Exec(`
 			INSERT INTO order_items (order_id, product, quantity, price, note, image_url, product_id, created_at)
@@ -1031,14 +1059,42 @@ func createNewOrderAfterChoice(w http.ResponseWriter, userID string, req OrderCh
 		`, orderID, item.Name, item.Qty, item.Price, item.Note, item.ImageURL, item.ProductID)
 
 		if err != nil {
-			log.Printf("⚠️  Failed to insert item %s: %v", item.Name, err)
+			log.Printf("⚠️ Failed to insert item %s for order #%d: %v", item.Name, orderID, err)
+			rollbackCreatedOrder(orderID, deductions)
+			http.Error(w, "failed to create order items", http.StatusInternalServerError)
+			return
 		}
 
-		// Handle stock reservation
+		// Deduct stock atomically for each line item
 		if item.ProductID > 0 {
 			if err := models.AtomicPurchase(item.ProductID, item.Qty, orderID); err != nil {
-				log.Printf("⚠️ Atomic purchase failed for product %d: %v", item.ProductID, err)
+				log.Printf("⚠️ Atomic purchase failed for product %d (order #%d): %v", item.ProductID, orderID, err)
+				rollbackCreatedOrder(orderID, deductions)
+
+				w.Header().Set("Content-Type", "application/json")
+				if errors.Is(err, models.ErrInsufficientStock) {
+					itemName := strings.TrimSpace(item.Name)
+					if itemName == "" {
+						itemName = "item"
+					}
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success": false,
+						"error":   "insufficient_stock",
+						"message": fmt.Sprintf("Sorry, %s is out of stock or has insufficient quantity.", itemName),
+					})
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "stock_deduction_failed",
+					"message": "Failed to reserve stock. Please try again.",
+				})
+				return
 			}
+			deductions = append(deductions, stockDeduction{ProductID: item.ProductID, Quantity: item.Qty})
 		}
 	}
 
@@ -1775,6 +1831,7 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Insert order items and deduct stock using ATOMIC operations
 	// This prevents race conditions where two users order the last item simultaneously
+	deductions := make([]stockDeduction, 0, len(req.Items))
 	for _, item := range req.Items {
 		_, err = configs.DB.Exec(`
 			INSERT INTO order_items (order_id, product, quantity, price, note, image_url, product_id, created_at)
@@ -1782,20 +1839,44 @@ func CreateChatOrder(w http.ResponseWriter, r *http.Request) {
 		`, orderID, item.Name, item.Qty, item.Price, item.Note, item.ImageURL, item.ProductID)
 
 		if err != nil {
-			log.Printf("⚠️  Failed to insert item %s: %v", item.Name, err)
+			log.Printf("⚠️ Failed to insert item %s for order #%d: %v", item.Name, orderID, err)
+			rollbackCreatedOrder(orderID, deductions)
+			http.Error(w, "failed to create order items", http.StatusInternalServerError)
+			return
 		}
 
 		// PRODUCTION-GRADE: Use atomic purchase with row locking
 		if item.ProductID > 0 {
 			err = models.AtomicPurchase(item.ProductID, item.Qty, orderID)
 			if err != nil {
-				// Stock became unavailable between check and purchase (rare race condition)
-				// In production, you might want to handle partial fulfillment here
-				log.Printf("⚠️ Atomic purchase failed for product %d: %v", item.ProductID, err)
-				// Note: Order is already created, so we log the issue
-				// A more robust system would use a transaction for the entire order
+				log.Printf("⚠️ Atomic purchase failed for product %d (order #%d): %v", item.ProductID, orderID, err)
+				rollbackCreatedOrder(orderID, deductions)
+
+				w.Header().Set("Content-Type", "application/json")
+				if errors.Is(err, models.ErrInsufficientStock) {
+					itemName := strings.TrimSpace(item.Name)
+					if itemName == "" {
+						itemName = "item"
+					}
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success": false,
+						"error":   "insufficient_stock",
+						"message": fmt.Sprintf("Sorry, %s is out of stock or has insufficient quantity.", itemName),
+					})
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "stock_deduction_failed",
+					"message": "Failed to reserve stock. Please try again.",
+				})
+				return
 			} else {
 				log.Printf("📦 Atomically deducted %d stock from product #%d", item.Qty, item.ProductID)
+				deductions = append(deductions, stockDeduction{ProductID: item.ProductID, Quantity: item.Qty})
 			}
 		}
 	}

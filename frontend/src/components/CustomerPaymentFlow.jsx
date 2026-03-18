@@ -9,8 +9,26 @@ export default function CustomerPaymentFlow({ order }) {
     const [dragOver, setDragOver] = useState(false);
     const [preview, setPreview] = useState(null);
     const [selectedFile, setSelectedFile] = useState(null);
+    const [paymentSettings, setPaymentSettings] = useState(null);
     const fileInputRef = useRef(null);
     const messengerCloseTimeoutRef = useRef(null);
+
+    useEffect(() => {
+        const loadPaymentSettings = async () => {
+            try {
+                const res = await fetch('/api/payment-settings');
+                const data = await res.json();
+                const settings = data?.settings || data;
+                if (settings && typeof settings === 'object') {
+                    setPaymentSettings(settings);
+                }
+            } catch (e) {
+                console.error('Error fetching payment settings', e);
+            }
+        };
+
+        loadPaymentSettings();
+    }, []);
 
     // Check existing payment status on mount
     useEffect(() => {
@@ -181,94 +199,131 @@ export default function CustomerPaymentFlow({ order }) {
 
     // ── Pending State ──
     if (status === 'pending') {
+        const qrCodeSrc = paymentSettings?.qr_code_image_url || `/qr_codes/order_${order.id}.png`;
+        const hasReceiverDetails = Boolean(
+            paymentSettings?.receiver_name ||
+            paymentSettings?.receiver_phone ||
+            paymentSettings?.bank_name
+        );
+
         return (
-            <div className="rounded-2xl overflow-hidden"
+            <div className="rounded-2xl"
                 style={{
                     background: '#fff',
-                    boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)',
+                    boxShadow: '0 8px 28px rgba(15,23,42,0.08), 0 1px 4px rgba(15,23,42,0.05)',
                     border: '1px solid #f0ebe4',
                 }}>
-                {/* Header */}
-                <div style={{
-                    background: 'linear-gradient(135deg, #D8A35D 0%, #E8B86D 50%, #F4C27F 100%)',
-                    padding: '28px 24px',
-                    textAlign: 'center',
-                    position: 'relative',
-                    overflow: 'hidden',
-                }}>
+                <div style={{ padding: '20px' }}>
+                    {/* 1) Small order summary */}
                     <div style={{
-                        position: 'absolute', top: '-40px', right: '-40px',
-                        width: '120px', height: '120px', borderRadius: '50%',
-                        background: 'rgba(255,255,255,0.1)',
-                    }} />
-                    <div style={{
-                        position: 'absolute', bottom: '-20px', left: '-20px',
-                        width: '80px', height: '80px', borderRadius: '50%',
-                        background: 'rgba(255,255,255,0.08)',
-                    }} />
-                    <div style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: '48px', height: '48px', borderRadius: '14px',
-                        background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)',
-                        marginBottom: '12px',
+                        marginBottom: '20px',
+                        border: '1px solid #ece8df',
+                        borderRadius: '12px',
+                        background: '#faf8f4',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '12px',
                     }}>
-                        <Shield size={24} color="#fff" />
+                        <div>
+                            <div style={{ fontSize: '12px', color: '#8b9099', fontWeight: 600, marginBottom: '2px' }}>
+                                ORDER SUMMARY
+                            </div>
+                            <div style={{ fontSize: '14px', color: '#1f2937', fontWeight: 700 }}>
+                                Order #{order.id}
+                            </div>
+                        </div>
+                        <div style={{ fontSize: '16px', color: '#111827', fontWeight: 800 }}>
+                            Ks {order.total_amount?.toFixed(2)}
+                        </div>
                     </div>
-                    <h2 style={{
-                        color: '#fff', fontSize: '20px', fontWeight: 700,
-                        margin: '0 0 4px 0', letterSpacing: '-0.3px',
-                    }}>
-                        Complete Payment
-                    </h2>
-                    <p style={{
-                        color: 'rgba(255,255,255,0.85)', fontSize: '14px', margin: 0,
-                    }}>
-                        Order #{order.id} · Ks {order.total_amount?.toFixed(2)}
-                    </p>
-                </div>
 
-                <div style={{ padding: '24px' }}>
-                    {/* QR Section */}
-                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <p style={{
-                            fontSize: '11px', fontWeight: 600, textTransform: 'uppercase',
-                            letterSpacing: '1.2px', color: '#9ca3af', marginBottom: '16px',
+                    {/* 2) QR main focus */}
+                    <section style={{ textAlign: 'center', marginBottom: '24px' }}>
+                        <h2 style={{
+                            fontSize: '22px',
+                            lineHeight: 1.2,
+                            fontWeight: 800,
+                            color: '#111827',
+                            letterSpacing: '-0.3px',
+                            margin: '0 0 12px 0',
                         }}>
-                            Scan to Pay
-                        </p>
+                            Scan this QR code to pay
+                        </h2>
+
                         <div style={{
-                            display: 'inline-block', padding: '12px',
-                            background: '#fff', borderRadius: '16px',
-                            border: '2px solid #f3ede6',
-                            boxShadow: '0 2px 12px rgba(216,163,93,0.1)',
+                            background: '#fff',
+                            border: '1px solid #ece8df',
+                            borderRadius: '14px',
+                            boxShadow: '0 3px 12px rgba(0,0,0,0.06)',
+                            padding: '16px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                         }}>
                             <img
-                                src={`/qr_codes/order_${order.id}.png`}
+                                src={qrCodeSrc}
                                 alt="Payment QR Code"
                                 style={{
-                                    width: '180px', height: '180px',
-                                    objectFit: 'contain', display: 'block',
+                                    width: '78vw',
+                                    maxWidth: '320px',
+                                    minWidth: '240px',
+                                    aspectRatio: '1 / 1',
+                                    objectFit: 'contain',
+                                    display: 'block',
                                 }}
                             />
                         </div>
-                        <p style={{
-                            fontSize: '12px', color: '#9ca3af', marginTop: '12px',
-                            maxWidth: '260px', marginLeft: 'auto', marginRight: 'auto',
-                            lineHeight: 1.5,
-                        }}>
-                            Scan with your banking app (KPay, Wave, etc.) to pay
-                        </p>
-                    </div>
 
-                    {/* Divider */}
-                    <div style={{
-                        display: 'flex', alignItems: 'center', gap: '12px',
-                        marginBottom: '24px',
-                    }}>
-                        <div style={{ flex: 1, height: '1px', background: '#e5e7eb' }} />
-                        <span style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 500 }}>then</span>
-                        <div style={{ flex: 1, height: '1px', background: '#e5e7eb' }} />
-                    </div>
+                        <p style={{
+                            fontSize: '13px',
+                            color: '#6b7280',
+                            marginTop: '10px',
+                            lineHeight: 1.45,
+                            fontWeight: 500,
+                        }}>
+                            Open your banking app and scan. Then upload your payment screenshot below.
+                        </p>
+                    </section>
+
+                    {/* 3) Receiver details */}
+                    {hasReceiverDetails && (
+                        <section style={{
+                            marginBottom: '22px',
+                            textAlign: 'left',
+                            border: '1px solid #ece8df',
+                            borderRadius: '12px',
+                            background: '#fff',
+                            padding: '14px',
+                        }}>
+                            <div style={{
+                                fontSize: '12px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.8px',
+                                color: '#9ca3af',
+                                marginBottom: '10px',
+                                fontWeight: 700,
+                            }}>
+                                Receiver Details
+                            </div>
+                            {paymentSettings?.receiver_name && (
+                                <div style={{ fontSize: '14px', color: '#374151', marginBottom: '6px' }}>
+                                    <strong>Name:</strong> {paymentSettings.receiver_name}
+                                </div>
+                            )}
+                            {paymentSettings?.receiver_phone && (
+                                <div style={{ fontSize: '14px', color: '#374151', marginBottom: '6px' }}>
+                                    <strong>Phone:</strong> {paymentSettings.receiver_phone}
+                                </div>
+                            )}
+                            {paymentSettings?.bank_name && (
+                                <div style={{ fontSize: '14px', color: '#374151' }}>
+                                    <strong>Bank/Wallet:</strong> {paymentSettings.bank_name}
+                                </div>
+                            )}
+                        </section>
+                    )}
 
                     {/* Upload Section */}
                     <div>
