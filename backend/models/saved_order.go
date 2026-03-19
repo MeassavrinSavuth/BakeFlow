@@ -77,10 +77,28 @@ func GetSavedOrdersBySenderID(senderID string) ([]SavedOrder, error) {
 
 func GetSavedOrderItems(savedOrderID int) ([]SavedOrderItem, error) {
 	rows, err := configs.DB.Query(`
-		SELECT id, saved_order_id, product_id, name, qty, COALESCE(price, 0), COALESCE(image_url, ''), created_at
-		FROM saved_order_items
-		WHERE saved_order_id = $1
-		ORDER BY id
+		SELECT
+			soi.id,
+			soi.saved_order_id,
+			COALESCE(
+				soi.product_id,
+				(
+					SELECT p.id
+					FROM products p
+					WHERE LOWER(TRIM(p.name)) = LOWER(TRIM(soi.name))
+					  AND p.deleted_at IS NULL
+					  AND p.status = 'active'
+					LIMIT 1
+				)
+			) AS resolved_product_id,
+			soi.name,
+			soi.qty,
+			COALESCE(soi.price, 0),
+			COALESCE(soi.image_url, ''),
+			soi.created_at
+		FROM saved_order_items soi
+		WHERE soi.saved_order_id = $1
+		ORDER BY soi.id
 	`, savedOrderID)
 	if err != nil {
 		return nil, err

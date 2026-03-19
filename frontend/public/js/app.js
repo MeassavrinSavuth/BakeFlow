@@ -21,8 +21,12 @@ async function init() {
     updateCart();
     await Promise.resolve(renderRecentOrders());
     await Promise.resolve(renderSavedOrders());
-    renderPlacesBar();
-    renderRecurringOrders();
+    if (typeof renderPlacesBar === 'function') {
+        renderPlacesBar();
+    }
+    if (typeof renderRecurringOrders === 'function') {
+        renderRecurringOrders();
+    }
 
     if (typeof initPreorderUI === 'function') {
         initPreorderUI();
@@ -42,44 +46,121 @@ async function init() {
     const params = new URLSearchParams(window.location.search);
     const userId = params.get('user_id') || 'guest';
     const tok = (window.getWebviewToken && window.getWebviewToken()) || params.get('t') || '';
-    const pendingCartKey = `pending_reorder_${userId}`;
-    const pendingCartKeyTok = tok ? `pending_reorder_t_${tok}` : '';
-    const pendingCart = localStorage.getItem(pendingCartKey) || (pendingCartKeyTok ? localStorage.getItem(pendingCartKeyTok) : null);
+
+    const storedPsid = (() => {
+        try { return localStorage.getItem('bf_psid') || ''; } catch (e) { return ''; }
+    })();
+    const storedUserId = (() => {
+        try { return localStorage.getItem('bf_user_id') || ''; } catch (e) { return ''; }
+    })();
+
+    const pendingCartKeys = [
+        tok ? `pending_reorder_t_${tok}` : '',
+        `pending_reorder_${userId}`,
+        storedPsid ? `pending_reorder_${storedPsid}` : '',
+        storedUserId ? `pending_reorder_${storedUserId}` : '',
+        'pending_reorder_guest',
+        'pending_reorder_latest'
+    ].filter(Boolean);
+
+    let pendingCart = null;
+    for (const key of pendingCartKeys) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+            pendingCart = raw;
+            break;
+        }
+    }
     
     // Load custom notes if available
-    const notesKey = `pending_notes_${userId}`;
-    const notesKeyTok = tok ? `pending_notes_t_${tok}` : '';
-    const pendingNotes = localStorage.getItem(notesKey) || (notesKeyTok ? localStorage.getItem(notesKeyTok) : null);
+    const notesKeys = [
+        tok ? `pending_notes_t_${tok}` : '',
+        `pending_notes_${userId}`,
+        storedPsid ? `pending_notes_${storedPsid}` : '',
+        storedUserId ? `pending_notes_${storedUserId}` : '',
+        'pending_notes_guest',
+        'pending_notes_latest'
+    ].filter(Boolean);
+
+    let pendingNotes = null;
+    for (const key of notesKeys) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+            pendingNotes = raw;
+            break;
+        }
+    }
     let customNotes = {};
     if (pendingNotes) {
         try {
             customNotes = JSON.parse(pendingNotes);
         } catch(e) {}
-        localStorage.removeItem(notesKey);
-        if (notesKeyTok) localStorage.removeItem(notesKeyTok);
+        notesKeys.forEach(k => localStorage.removeItem(k));
     }
     
+    let pendingCartApplied = false;
+
     if (pendingCart) {
         try {
             const items = JSON.parse(pendingCart);
             const newCart = {};
             const unavailableItems = [];
             const itemsWithNotes = [];
+
+            const normalizeName = (v) => String(v || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9\s]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            const resolveProductFromPendingItem = (it) => {
+                const directId = it && (it.id != null ? it.id : it.product_id);
+                if (directId != null) {
+                    const byId = window.products.find(px => px.id == directId);
+                    if (byId) return byId;
+                }
+
+                const rawName = (it && (it.name || it.product)) ? String(it.name || it.product) : '';
+                const normalized = rawName.trim().toLowerCase();
+                if (!normalized) return null;
+
+                let byName = window.products.find(px => (px.name || '').trim().toLowerCase() === normalized);
+                if (byName) return byName;
+
+                const compact = normalized.replace(/\s+/g, ' ');
+                byName = window.products.find(px => ((px.name || '').trim().toLowerCase().replace(/\s+/g, ' ')) === compact);
+                if (byName) return byName;
+
+                const normalizedLoose = normalizeName(rawName);
+                if (!normalizedLoose) return null;
+                byName = window.products.find(px => normalizeName(px.name) === normalizedLoose);
+                return byName || null;
+            };
             
             items.forEach(it => {
-                const p = window.products.find(px => px.id == it.id);
+                const p = resolveProductFromPendingItem(it);
                 if (p) {
-                    newCart[it.id] = it.qty;
+                    const qtyRaw = Number(it && (it.qty != null ? it.qty : it.quantity));
+                    const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+                    newCart[p.id] = (newCart[p.id] || 0) + qty;
                     // Check for custom notes from item or from notes storage
-                    const note = it.note || customNotes[it.id] || '';
+                    const note = it.note || customNotes[p.id] || customNotes[it.id] || '';
                     if (note) {
-                        itemsWithNotes.push({ id: it.id, note });
+                        itemsWithNotes.push({ id: p.id, note });
                     }
                 } else {
-                    unavailableItems.push(it.name || `Item #${it.id}`);
+                    const fallbackId = it && (it.id != null ? it.id : it.product_id);
+                    unavailableItems.push((it && (it.name || it.product)) || (fallbackId != null ? `Item #${fallbackId}` : 'Unknown item'));
                 }
             });
-            setCart(newCart);
+
+            const matchedQty = Object.values(newCart).reduce((s, q) => s + Number(q || 0), 0);
+            const sourceCount = Array.isArray(items) ? items.length : 0;
+
+            if (matchedQty > 0) {
+                setCart(newCart);
+                pendingCartApplied = true;
+            }
             
             // Store custom notes globally for order submission
             if (itemsWithNotes.length > 0) {
@@ -88,15 +169,20 @@ async function init() {
                     window.cartItemNotes[item.id] = item.note;
                 });
             }
-            
-            updateCart();
-            localStorage.removeItem(pendingCartKey);
-            if (pendingCartKeyTok) localStorage.removeItem(pendingCartKeyTok);
+
+            if (pendingCartApplied) {
+                updateCart();
+                pendingCartKeys.forEach(k => localStorage.removeItem(k));
+            } else {
+                console.warn('[BakeFlow] Pending reorder found but no products matched', { sourceCount, items });
+            }
             
             if (unavailableItems.length > 0) {
                 const itemNames = unavailableItems.slice(0, 3).join(', ');
                 const more = unavailableItems.length > 3 ? ` and ${unavailableItems.length - 3} more` : '';
                 showToast(`Some items unavailable: ${itemNames}${more}`, 'warning');
+            } else if (!pendingCartApplied && sourceCount > 0) {
+                showToast('Reorder data found, but could not map items to current menu', 'warning');
             } else if (itemsWithNotes.length > 0) {
                 showToast('✓ Order loaded with notes', 'success');
             } else {
@@ -128,28 +214,48 @@ async function init() {
     }
     
     // Handle reorder flag from order details
-    if (params.get('reorder') === '1' && !pendingCart) {
+    if (params.get('reorder') === '1' && !pendingCartApplied) {
         const key = `saved_orders_${userId}`;
         const list = JSON.parse(localStorage.getItem(key) || '[]');
         if (list.length > 0) {
             const newCart = {};
             const unavailableItems = [];
+
+            const normalizeName = (v) => String(v || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9\s]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
             (list[0].items || []).forEach(it => {
-                const p = window.products.find(px => (px.name || '').toLowerCase() === (it.name || '').toLowerCase());
+                const directId = it && (it.id != null ? it.id : it.product_id);
+                let p = directId != null ? window.products.find(px => px.id == directId) : null;
+                if (!p) {
+                    const target = normalizeName(it.name || it.product || '');
+                    p = target ? window.products.find(px => normalizeName(px.name) === target) : null;
+                }
                 const id = p ? p.id : null;
                 if (id) {
-                    newCart[id] = it.qty;
+                    const qtyRaw = Number(it && (it.qty != null ? it.qty : it.quantity));
+                    const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+                    newCart[id] = (newCart[id] || 0) + qty;
                 } else {
                     unavailableItems.push(it.name || 'Unknown item');
                 }
             });
-            setCart(newCart);
-            updateCart();
+
+            const matchedQty = Object.values(newCart).reduce((s, q) => s + Number(q || 0), 0);
+            if (matchedQty > 0) {
+                setCart(newCart);
+                updateCart();
+            }
             
             if (unavailableItems.length > 0) {
                 const itemNames = unavailableItems.slice(0, 3).join(', ');
                 const more = unavailableItems.length > 3 ? ` and ${unavailableItems.length - 3} more` : '';
                 showToast(`Some items unavailable: ${itemNames}${more}`, 'warning');
+            } else if (matchedQty <= 0) {
+                showToast('Could not restore reorder items. Please reorder manually once, then save again.', 'warning');
             } else {
                 showToast('✓ Order loaded', 'success');
             }
@@ -187,13 +293,27 @@ async function init() {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+    const navigateToSavedOrders = () => {
+        if (typeof goToSavedOrders === 'function') {
+            goToSavedOrders();
+            return;
+        }
+
+        const qs = new URLSearchParams();
+        const uid = (window.getUserId && window.getUserId()) || '';
+        const tok = (window.getWebviewToken && window.getWebviewToken()) || new URLSearchParams(window.location.search).get('t') || '';
+        if (uid && uid !== 'guest') qs.set('user_id', uid);
+        if (tok) qs.set('t', tok);
+        window.location.href = '/saved-orders.html' + (qs.toString() ? ('?' + qs.toString()) : '');
+    };
+
     // Initialize all modules
     init();
     initSheetListeners();
     initSaveSheet();
-    initPlacesSheet();
-    initScheduleSheet();
-    initRecurringSheet();
+    if (typeof initPlacesSheet === 'function') initPlacesSheet();
+    if (typeof initScheduleSheet === 'function') initScheduleSheet();
+    if (typeof initRecurringSheet === 'function') initRecurringSheet();
 
     // Clear inline validation errors on input
     document.addEventListener('input', e => {
@@ -271,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         manageBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            goToSavedOrders();
+            navigateToSavedOrders();
         });
     }
     
@@ -279,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', (e) => {
         if (e.target.closest('#manageSavedOrdersBtn')) {
             e.preventDefault();
-            goToSavedOrders();
+            navigateToSavedOrders();
         }
     });
 });

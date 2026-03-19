@@ -13,7 +13,7 @@ function setPlaces(list) {
     localStorage.setItem(key, JSON.stringify(list));
 }
 
-const TOWNSHIP_OPTIONS = [
+const PLACES_TOWNSHIP_OPTIONS = [
     'Kyimyindaing',
     'Ahlon',
     'Sanchaung',
@@ -32,7 +32,7 @@ const TOWNSHIP_OPTIONS = [
 function guessTownshipFromAddress(text) {
     const v = String(text || '').toLowerCase();
     if (!v) return '';
-    const hit = TOWNSHIP_OPTIONS.find(t => v.includes(t.toLowerCase()));
+    const hit = PLACES_TOWNSHIP_OPTIONS.find(t => v.includes(t.toLowerCase()));
     return hit || '';
 }
 

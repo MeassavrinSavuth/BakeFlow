@@ -59,6 +59,27 @@ function findProductIdByName(name) {
     return p ? p.id : null;
 }
 
+function findProductByItem(item) {
+    const products = Array.isArray(window.products) ? window.products : [];
+    const rawId = item && (item.id != null ? item.id : item.product_id);
+    if (rawId != null) {
+        const byId = products.find(p => p.id == rawId);
+        if (byId) return byId;
+    }
+
+    const rawName = (item && (item.name || item.product)) ? String(item.name || item.product) : '';
+    const normalized = rawName.trim().toLowerCase();
+    if (!normalized) return null;
+
+    let byName = products.find(p => (p.name || '').trim().toLowerCase() === normalized);
+    if (byName) return byName;
+
+    // Fallback: collapse inner spaces so minor formatting differences still match
+    const compact = normalized.replace(/\s+/g, ' ');
+    byName = products.find(p => ((p.name || '').trim().toLowerCase().replace(/\s+/g, ' ')) === compact);
+    return byName || null;
+}
+
 function normalizeRecentOrdersFromAPI(apiOrders) {
     const orders = Array.isArray(apiOrders) ? apiOrders : [];
     return orders.map(o => {
@@ -291,11 +312,13 @@ window.applySavedOrder = function(idx) {
     const products = window.products || [];
     
     o.items.forEach(it => {
-        const p = products.find(px => px.id == it.id);
+        const p = findProductByItem(it);
         if (p) {
-            newCart[it.id] = it.qty;
+            const qty = Number(it.qty != null ? it.qty : it.quantity);
+            newCart[p.id] = Number.isFinite(qty) && qty > 0 ? qty : 1;
         } else {
-            unavailableItems.push(it.name || `Item #${it.id}`);
+            const missingName = (it && (it.name || it.product)) || (it && it.id != null ? `Item #${it.id}` : 'Unknown item');
+            unavailableItems.push(missingName);
         }
     });
     
@@ -331,14 +354,14 @@ window.applyRecentOrder = function(idx) {
     const products = window.products || [];
     
     o.items.forEach(it => {
-        const id = it.id || it.product_id;
-        if (id != null) {
-            const p = products.find(px => px.id == id);
-            if (p) {
-                newCart[id] = it.qty || 1;
-            } else {
-                unavailableItems.push(it.name || `Item #${id}`);
-            }
+        const p = findProductByItem(it);
+        if (p) {
+            const qty = Number(it.qty != null ? it.qty : it.quantity);
+            newCart[p.id] = Number.isFinite(qty) && qty > 0 ? qty : 1;
+        } else {
+            const fallbackId = it && (it.id != null ? it.id : it.product_id);
+            const missingName = (it && (it.name || it.product)) || (fallbackId != null ? `Item #${fallbackId}` : 'Unknown item');
+            unavailableItems.push(missingName);
         }
     });
 

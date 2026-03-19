@@ -960,16 +960,87 @@
         let selectedOrderIdx = null;
 
         function getToken() {
-            return new URLSearchParams(window.location.search).get('t') || '';
+            const tok = new URLSearchParams(window.location.search).get('t');
+            if (tok) return tok;
+            try {
+                return localStorage.getItem('bf_webview_token') || '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function getStoredUserId() {
+            try {
+                const psid = localStorage.getItem('bf_psid');
+                if (psid && psid !== 'guest') return psid;
+                const uid = localStorage.getItem('bf_user_id');
+                if (uid && uid !== 'guest') return uid;
+            } catch (e) {}
+            return '';
         }
 
         function getUserId() {
             const params = new URLSearchParams(window.location.search);
             const userId = params.get('user_id');
-            if (userId) return userId;
+            if (userId && userId !== 'guest') return userId;
+
+            const stored = getStoredUserId();
+            if (stored) return stored;
+
             const tok = getToken();
             if (tok) return `t_${tok.slice(0, 16)}`;
             return 'guest';
+        }
+
+        function storeIdentityParams() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const tok = params.get('t');
+                const userId = params.get('user_id');
+                if (tok) localStorage.setItem('bf_webview_token', tok);
+                if (userId && userId !== 'guest') localStorage.setItem('bf_user_id', userId);
+            } catch (e) {}
+        }
+
+        function getPendingCartKeys() {
+            const keys = [];
+            const tok = getToken();
+            const userId = getUserId();
+
+            if (tok) keys.push(`pending_reorder_t_${tok}`);
+            if (userId) keys.push(`pending_reorder_${userId}`);
+            keys.push('pending_reorder_guest');
+            keys.push('pending_reorder_latest');
+
+            return Array.from(new Set(keys.filter(Boolean)));
+        }
+
+        function getPendingNotesKeys() {
+            const keys = [];
+            const tok = getToken();
+            const userId = getUserId();
+
+            if (tok) keys.push(`pending_notes_t_${tok}`);
+            if (userId) keys.push(`pending_notes_${userId}`);
+            keys.push('pending_notes_guest');
+            keys.push('pending_notes_latest');
+
+            return Array.from(new Set(keys.filter(Boolean)));
+        }
+
+        function persistPendingReorderPayload(cartItems, notesObj) {
+            const cartPayload = JSON.stringify(Array.isArray(cartItems) ? cartItems : []);
+            getPendingCartKeys().forEach(k => {
+                try { localStorage.setItem(k, cartPayload); } catch (e) {}
+            });
+
+            const hasNotes = notesObj && Object.keys(notesObj).length > 0;
+            getPendingNotesKeys().forEach(k => {
+                try {
+                    if (hasNotes) localStorage.setItem(k, JSON.stringify(notesObj));
+                    else localStorage.removeItem(k);
+                } catch (e) {}
+            });
         }
 
         async function init() {
@@ -1081,6 +1152,13 @@
             return null;
         }
 
+        function resolveProductIdForItem(it) {
+            const direct = getItemProductId(it);
+            if (direct != null) return direct;
+            const p = getProductForItem(it);
+            return p && p.id != null ? p.id : null;
+        }
+
         function getItemQty(it) {
             const q = it && (it.qty != null ? it.qty : it.quantity);
             const n = Number(q);
@@ -1130,8 +1208,8 @@
         function normalizeItemsForOrderForm(items) {
             const arr = Array.isArray(items) ? items : [];
             return arr.map(it => {
-                const pid = getItemProductId(it);
                 const p = getProductForItem(it);
+                const pid = resolveProductIdForItem(it);
                 // Only include available items
                 if (!p) return null;
                 const qty = getItemQty(it);
@@ -1526,7 +1604,7 @@
                 
                 const qty = getItemQty(it);
                 const replacementId = reorderState.replacements[idx];
-                const productId = replacementId || getItemProductId(it);
+                const productId = replacementId || resolveProductIdForItem(it);
                 
                 if (productId) {
                     itemsToValidate.push({
@@ -1617,22 +1695,16 @@
                     });
 
                     // Save cart to localStorage and redirect
-                    const userId = getUserId();
                     const tok = getToken();
-                    const cartKey = tok ? `pending_reorder_t_${tok}` : `pending_reorder_${userId}`;
-                    localStorage.setItem(cartKey, JSON.stringify(cartItems));
                     
                     // Save custom notes separately if any exist
-                    const notesKey = tok ? `pending_notes_t_${tok}` : `pending_notes_${userId}`;
                     const notes = {};
                     cartItems.forEach(item => {
                         if (item.note) {
                             notes[item.id] = item.note;
                         }
                     });
-                    if (Object.keys(notes).length > 0) {
-                        localStorage.setItem(notesKey, JSON.stringify(notes));
-                    }
+                    persistPendingReorderPayload(cartItems, notes);
 
                     // Redirect to order form
                     const qs = new URLSearchParams();
@@ -1657,10 +1729,8 @@
         function editOrder(idx) {
             const order = savedOrders[idx];
             // Save items to cart and go to order form for editing
-            const userId = getUserId();
             const tok = getToken();
-            const cartKey = tok ? `pending_reorder_t_${tok}` : `pending_reorder_${userId}`;
-            localStorage.setItem(cartKey, JSON.stringify(normalizeItemsForOrderForm(order.items)));
+            persistPendingReorderPayload(normalizeItemsForOrderForm(order.items), {});
             localStorage.setItem('editing_order_idx', idx);
             const qs = new URLSearchParams();
             const originalUserId = new URLSearchParams(window.location.search).get('user_id') || '';
@@ -1673,10 +1743,8 @@
         // Schedule
         function scheduleOrder(idx) {
             const order = savedOrders[idx];
-            const userId = getUserId();
             const tok = getToken();
-            const cartKey = tok ? `pending_reorder_t_${tok}` : `pending_reorder_${userId}`;
-            localStorage.setItem(cartKey, JSON.stringify(normalizeItemsForOrderForm(order.items)));
+            persistPendingReorderPayload(normalizeItemsForOrderForm(order.items), {});
             const qs = new URLSearchParams();
             const originalUserId = new URLSearchParams(window.location.search).get('user_id') || '';
             if (originalUserId) qs.set('user_id', originalUserId);
@@ -1733,7 +1801,8 @@
             const tok = getToken();
             const originalUserId = new URLSearchParams(window.location.search).get('user_id') || '';
             const qs = new URLSearchParams();
-            if (originalUserId) qs.set('user_id', originalUserId);
+            const stableUserId = originalUserId || getStoredUserId();
+            if (stableUserId) qs.set('user_id', stableUserId);
             if (tok) qs.set('t', tok);
             window.location.href = `order-form.html${qs.toString() ? ('?' + qs.toString()) : ''}`;
         }
@@ -1743,6 +1812,7 @@
         }
 
         // Init
+        storeIdentityParams();
         init();
     </script>
 </body>
