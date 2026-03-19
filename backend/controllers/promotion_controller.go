@@ -26,9 +26,9 @@ type CheckoutCartItem struct {
 
 // CheckoutRequest represents the checkout request
 type CheckoutRequest struct {
-	CartItems     []CheckoutCartItem `json:"cartItems"`
-	DeliveryType  string            `json:"delivery_type"`
-	Address       string            `json:"address"`
+	CartItems    []CheckoutCartItem `json:"cartItems"`
+	DeliveryType string             `json:"delivery_type"`
+	Address      string             `json:"address"`
 }
 
 // CheckoutResponse represents the checkout response with applied promotion
@@ -521,48 +521,49 @@ func allocatePromotionsToLineItems(activePromotions []models.Promotion, cartItem
 			return 0
 		}
 
-		eligibleProductIDs := []int{}
-		if len(rules.BuyProductIDs) == 0 && len(rules.GetProductIDs) == 0 {
-			eligibleProductIDs = append([]int(nil), rules.ProductIDs...)
-		} else {
-			buySet := map[int]struct{}{}
-			for _, id := range rules.BuyProductIDs {
-				buySet[id] = struct{}{}
-			}
-			uniq := map[int]struct{}{}
-			for _, id := range rules.GetProductIDs {
-				if _, ok := buySet[id]; !ok {
-					continue
-				}
-				if _, seen := uniq[id]; seen {
-					continue
-				}
-				uniq[id] = struct{}{}
-				eligibleProductIDs = append(eligibleProductIDs, id)
+		// In SameItem mode, we handle the case where Buy and Get sets overlap.
+		// We pool all items in (BuyProductIDs Union GetProductIDs) for the quantity calculation,
+		// but we can only apply the discount to items in GetProductIDs.
+
+		buyIDs := append([]int(nil), rules.BuyProductIDs...)
+		getIDs := append([]int(nil), rules.GetProductIDs...)
+		if len(buyIDs) == 0 && len(getIDs) == 0 {
+			buyIDs = append([]int(nil), rules.ProductIDs...)
+			getIDs = append([]int(nil), rules.ProductIDs...)
+		}
+
+		unionSet := map[int]struct{}{}
+		for _, id := range buyIDs {
+			unionSet[id] = struct{}{}
+		}
+		for _, id := range getIDs {
+			unionSet[id] = struct{}{}
+		}
+
+		totalPoolQty := 0
+		for pid := range unionSet {
+			idxs := productToLineIdx[pid]
+			for _, idx := range idxs {
+				totalPoolQty += remaining[idx]
 			}
 		}
 
-		if len(eligibleProductIDs) == 0 {
+		// Number of free items allowed in total from this pool
+		freeQtyTotal := (totalPoolQty / groupSize) * rules.GetQty
+		if freeQtyTotal <= 0 {
 			return 0
 		}
 
-		total := 0.0
-		for _, pid := range eligibleProductIDs {
-			idxs := append([]int(nil), productToLineIdx[pid]...)
-			if len(idxs) == 0 {
-				continue
-			}
-			availableQty := 0
-			for _, idx := range idxs {
-				availableQty += remaining[idx]
-			}
-			freeQty := (availableQty / groupSize) * rules.GetQty
-			if freeQty <= 0 {
-				continue
-			}
-			total += allocateUnits(idxs, freeQty, "FREE", promo, 0, 0)
+		// We can ONLY apply the discount to items that are in the GetProductIDs list
+		getLineIdxs := []int{}
+		getSet := map[int]struct{}{}
+		for _, id := range getIDs {
+			getSet[id] = struct{}{}
+			idxs := productToLineIdx[id]
+			getLineIdxs = append(getLineIdxs, idxs...)
 		}
-		return total
+
+		return allocateUnits(getLineIdxs, freeQtyTotal, "FREE", promo, 0, 0)
 	}
 
 	applyBuyXGetYDifferent := func(promo models.Promotion, rules *models.PromotionRules, discountType string) float64 {
@@ -974,8 +975,13 @@ func calculateBuyXGetYDiscount(rules *models.PromotionRules, cartItems []Checkou
 	legacyMode := len(rules.BuyProductIDs) == 0 && len(rules.GetProductIDs) == 0
 	if legacyMode {
 		totalDiscount := 0.0
-		productMap := make(map[int]int)
-		unitPriceMap := make(map[int]float64)
+		totalQty := 0
+
+		type getLine struct {
+			qty            int
+			savingsPerUnit float64
+		}
+		var lines []getLine
 
 		eligible := map[int]struct{}{}
 		if len(rules.ProductIDs) > 0 {
@@ -990,10 +996,13 @@ func calculateBuyXGetYDiscount(rules *models.PromotionRules, cartItems []Checkou
 					continue
 				}
 			}
-
-			productMap[item.ProductID] += item.Qty
-			if _, ok := unitPriceMap[item.ProductID]; !ok {
-				unitPriceMap[item.ProductID] = item.UnitPrice
+			if item.Qty <= 0 || item.UnitPrice <= 0 {
+				continue
+			}
+			totalQty += item.Qty
+			savings := calculateBuyXGetYSavingsForUnitPrice(1, item.UnitPrice, discountType, rules.DiscountPercent, rules.FixedPrice)
+			if savings > 0 {
+				lines = append(lines, getLine{qty: item.Qty, savingsPerUnit: savings})
 			}
 		}
 
@@ -1002,19 +1011,26 @@ func calculateBuyXGetYDiscount(rules *models.PromotionRules, cartItems []Checkou
 			return 0, ""
 		}
 
-		for productID, qty := range productMap {
-			unitPrice := unitPriceMap[productID]
-			if unitPrice <= 0 {
-				continue
-			}
+		freeQty := (totalQty / groupSize) * rules.GetQty
+		if freeQty <= 0 || len(lines) == 0 {
+			return 0, ""
+		}
 
-			sets := qty / groupSize
-			if sets <= 0 {
-				continue
-			}
+		sort.Slice(lines, func(i, j int) bool {
+			return lines[i].savingsPerUnit > lines[j].savingsPerUnit
+		})
 
-			discountedUnits := sets * rules.GetQty
-			totalDiscount += calculateBuyXGetYSavingsForUnitPrice(float64(discountedUnits), unitPrice, discountType, rules.DiscountPercent, rules.FixedPrice)
+		remainingQty := freeQty
+		for _, l := range lines {
+			use := l.qty
+			if use > remainingQty {
+				use = remainingQty
+			}
+			totalDiscount += float64(use) * l.savingsPerUnit
+			remainingQty -= use
+			if remainingQty <= 0 {
+				break
+			}
 		}
 
 		if totalDiscount == 0 {
@@ -1026,41 +1042,54 @@ func calculateBuyXGetYDiscount(rules *models.PromotionRules, cartItems []Checkou
 
 	buySet := make(map[int]struct{}, len(rules.BuyProductIDs))
 	for _, id := range rules.BuyProductIDs {
-		if id <= 0 {
-			continue
+		if id > 0 {
+			buySet[id] = struct{}{}
 		}
-		buySet[id] = struct{}{}
 	}
-
-	allGetInBuy := len(rules.GetProductIDs) > 0 && len(buySet) > 0
-	overlapSet := make(map[int]struct{}, len(rules.GetProductIDs))
+	getSet := make(map[int]struct{}, len(rules.GetProductIDs))
+	overlapSet := make(map[int]struct{})
 	for _, id := range rules.GetProductIDs {
 		if id <= 0 {
-			allGetInBuy = false
 			continue
 		}
-		if _, overlapsBuy := buySet[id]; overlapsBuy {
+		getSet[id] = struct{}{}
+		if _, ok := buySet[id]; ok {
 			overlapSet[id] = struct{}{}
-			continue
 		}
-		allGetInBuy = false
 	}
 
-	if allGetInBuy && len(overlapSet) > 0 {
+	// Any overlap? Use group size logic on the UNION of Buy and Get sets.
+	if len(overlapSet) > 0 {
+		unionSet := make(map[int]struct{})
+		for id := range buySet {
+			unionSet[id] = struct{}{}
+		}
+		for id := range getSet {
+			unionSet[id] = struct{}{}
+		}
+
 		totalDiscount := 0.0
-		productMap := make(map[int]int)
-		unitPriceMap := make(map[int]float64)
+		totalPoolQty := 0
+
+		type getLine struct {
+			productId      int
+			qty            int
+			savingsPerUnit float64
+		}
+		var targetLines []getLine
 
 		for _, item := range cartItems {
 			if item.Qty <= 0 || item.UnitPrice <= 0 {
 				continue
 			}
-			if _, ok := overlapSet[item.ProductID]; !ok {
-				continue
+			if _, inPool := unionSet[item.ProductID]; inPool {
+				totalPoolQty += item.Qty
 			}
-			productMap[item.ProductID] += item.Qty
-			if _, ok := unitPriceMap[item.ProductID]; !ok {
-				unitPriceMap[item.ProductID] = item.UnitPrice
+			if _, inGet := getSet[item.ProductID]; inGet {
+				savings := calculateBuyXGetYSavingsForUnitPrice(1, item.UnitPrice, discountType, rules.DiscountPercent, rules.FixedPrice)
+				if savings > 0 {
+					targetLines = append(targetLines, getLine{productId: item.ProductID, qty: item.Qty, savingsPerUnit: savings})
+				}
 			}
 		}
 
@@ -1069,27 +1098,35 @@ func calculateBuyXGetYDiscount(rules *models.PromotionRules, cartItems []Checkou
 			return 0, ""
 		}
 
-		for productID, qty := range productMap {
-			unitPrice := unitPriceMap[productID]
-			if unitPrice <= 0 {
-				continue
-			}
-			sets := qty / groupSize
-			if sets <= 0 {
-				continue
-			}
-			discountedUnits := sets * rules.GetQty
-			totalDiscount += calculateBuyXGetYSavingsForUnitPrice(float64(discountedUnits), unitPrice, discountType, rules.DiscountPercent, rules.FixedPrice)
-		}
-
-		if totalDiscount <= 0 {
+		freeQtyTotal := (totalPoolQty / groupSize) * rules.GetQty
+		if freeQtyTotal <= 0 || len(targetLines) == 0 {
 			return 0, ""
 		}
 
-		return totalDiscount, formatBuyXGetYDescription(rules.BuyQty, rules.GetQty, discountType, rules.DiscountPercent, rules.FixedPrice)
+		sort.Slice(targetLines, func(i, j int) bool {
+			return targetLines[i].savingsPerUnit > targetLines[j].savingsPerUnit
+		})
+
+		remainingFree := freeQtyTotal
+		for _, l := range targetLines {
+			use := l.qty
+			if use > remainingFree {
+				use = remainingFree
+			}
+			totalDiscount += float64(use) * l.savingsPerUnit
+			remainingFree -= use
+			if remainingFree <= 0 {
+				break
+			}
+		}
+
+		if totalDiscount > 0 {
+			return totalDiscount, formatBuyXGetYDescription(rules.BuyQty, rules.GetQty, discountType, rules.DiscountPercent, rules.FixedPrice)
+		}
+		return 0, ""
 	}
 
-	getSet := make(map[int]struct{}, len(rules.GetProductIDs))
+	getSet = make(map[int]struct{}, len(rules.GetProductIDs))
 	for _, id := range rules.GetProductIDs {
 		if id <= 0 {
 			continue

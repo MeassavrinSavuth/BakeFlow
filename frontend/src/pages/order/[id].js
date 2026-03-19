@@ -243,6 +243,46 @@ export default function OrderPage() {
                             </div>
                         ))}
 
+                        {/* Delivery Fee */}
+                        {Number(order.delivery_fee || 0) > 0 && (
+                            <div style={{
+                                display: 'flex', justifyContent: 'space-between',
+                                alignItems: 'center', marginTop: '12px', paddingTop: '12px',
+                                borderTop: '1px dashed #f3ede6',
+                            }}>
+                                <span style={{
+                                    fontSize: '14px', color: '#6b7280', fontWeight: 500,
+                                }}>
+                                    Delivery Fee
+                                </span>
+                                <span style={{
+                                    fontSize: '14px', fontWeight: 600, color: '#1f2937',
+                                }}>
+                                    Ks {Number(order.delivery_fee).toFixed(2)}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Discount */}
+                        {Number(order.discount || 0) > 0 && (
+                            <div style={{
+                                display: 'flex', justifyContent: 'space-between',
+                                alignItems: 'center', marginTop: '12px', paddingTop: '12px',
+                                borderTop: Number(order.delivery_fee || 0) > 0 ? 'none' : '1px dashed #f3ede6',
+                            }}>
+                                <span style={{
+                                    fontSize: '14px', color: '#6b7280', fontWeight: 500,
+                                }}>
+                                    Discount
+                                </span>
+                                <span style={{
+                                    fontSize: '14px', fontWeight: 600, color: '#059669',
+                                }}>
+                                    - Ks {Number(order.discount).toFixed(2)}
+                                </span>
+                            </div>
+                        )}
+
                         {/* Total */}
                         <div style={{
                             display: 'flex', justifyContent: 'space-between',

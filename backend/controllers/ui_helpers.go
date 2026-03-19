@@ -74,18 +74,22 @@ func showAbout(userID string) {
 	if state.Language == "my" {
 		aboutMsg = "🏪 ကျွန်ုပ်တို့အကြောင်း\n\n" +
 			"Homemade Homebake သည် လတ်ဆတ်သော မုန့်များကို နေ့စဉ် ဖုတ်လုပ်သော မုန့်ဆိုင်ဖြစ်ပါသည်။\n\n" +
-			"📍 တည်နေရာ: ရန်ကုန်မြို့\n" +
+			"📍 တည်နေရာ: No.550 , Lower Kyimyindine road ,\n" +
+			"     corner of PanHlaing Street , Kyimyindine\n" +
+			"     Township, Yangon .\n" +
 			"⏰ ဖွင့်ချိန်: နံနက် 8:00 - ညနေ 8:00\n" +
-			"📞 ဆက်သွယ်ရန်: +95 9 XXX XXX XXX"
+			"☎️Ph: 09252232297"
 
 		helpMsg = "\n\n❓ အသုံးပြုနည်း\n\n" +
 			"🛒 အော်ဒါမှာရန် 'Order' ခလုတ်ကို တို့ခြင်းပြီး ဝက်ဗြူ ဖောင်မ အသုံးပြုပါ!"
 	} else {
 		aboutMsg = "🏪 About Us\n\n" +
 			"Homemade Homebake is your neighborhood bakery, baking fresh daily!\n\n" +
-			"📍 Location: Yangon, Myanmar\n" +
+			"📍 Location: No.550 , Lower Kyimyindine road ,\n" +
+			"     corner of PanHlaing Street , Kyimyindine\n" +
+			"     Township, Yangon .\n" +
 			"⏰ Hours: 8:00 AM - 8:00 PM\n" +
-			"📞 Contact: +95 9 XXX XXX XXX"
+			"☎️Ph: 09252232297"
 
 		helpMsg = "\n\n❓ How to Use\n\n" +
 			"🛒 To place an order, tap the 'Order' button and use the web form!"

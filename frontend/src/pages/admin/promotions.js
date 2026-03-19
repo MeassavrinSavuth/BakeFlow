@@ -194,7 +194,7 @@ export default function PromotionsPage() {
         }
       }
 
-      const url = editingPromo 
+      const url = editingPromo
         ? `${API_BASE}/api/admin/promotions/${editingPromo.id}`
         : `${API_BASE}/api/admin/promotions`;
       const method = editingPromo ? 'PUT' : 'POST';
@@ -244,7 +244,7 @@ export default function PromotionsPage() {
 
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
-      
+
       if (data.success) {
         showNotification(editingPromo ? 'Promotion updated' : 'Promotion created', 'success');
         setShowForm(false);
@@ -382,8 +382,8 @@ export default function PromotionsPage() {
   const formatRules = (promo) => {
     const rules = typeof promo.rules === 'string' ? JSON.parse(promo.rules) : promo.rules;
     if (promo.type === 'PERCENT_OFF') {
-      const productText = rules.productIds && rules.productIds.length > 0 
-        ? ` (${rules.productIds.length} products)` 
+      const productText = rules.productIds && rules.productIds.length > 0
+        ? ` (${rules.productIds.length} products)`
         : ' (All products)';
       return `${rules.percent}% OFF${productText}`;
     } else if (promo.type === 'BUY_X_GET_Y') {
@@ -671,35 +671,35 @@ export default function PromotionsPage() {
                         <>
                           <div className="row mb-2">
                             <div className="col-md-6">
-                            <label className="form-label">Buy Quantity (total items in Buy Products)</label>
-                            <input
-                              type="number"
-                              className="form-control"
-                              min="1"
-                              value={formData.rules.buyQty || 1}
-                              onChange={(e) => setFormData({
-                                ...formData,
-                                rules: { ...formData.rules, buyQty: parseInt(e.target.value) }
-                              })}
-                              required
-                            />
-                            <div className="form-text text-muted">
-                              Customer must buy a total of {formData.rules.buyQty || 1} items from the Buy Products list. Mix & match allowed.
-                            </div>
+                              <label className="form-label">Buy Quantity (total items in Buy Products)</label>
+                              <input
+                                type="number"
+                                className="form-control"
+                                min="1"
+                                value={formData.rules.buyQty || 1}
+                                onChange={(e) => setFormData({
+                                  ...formData,
+                                  rules: { ...formData.rules, buyQty: parseInt(e.target.value) }
+                                })}
+                                required
+                              />
+                              <div className="form-text text-muted">
+                                Customer must buy a total of {formData.rules.buyQty || 1} items from the Buy Products list. Mix & match allowed.
+                              </div>
                             </div>
                             <div className="col-md-6">
                               <label className="form-label">Get Quantity</label>
-                            <input
-                              type="number"
-                              className="form-control"
-                              min="1"
-                              value={formData.rules.getQty || 1}
-                              onChange={(e) => setFormData({
-                                ...formData,
-                                rules: { ...formData.rules, getQty: parseInt(e.target.value) }
-                              })}
-                              required
-                            />
+                              <input
+                                type="number"
+                                className="form-control"
+                                min="1"
+                                value={formData.rules.getQty || 1}
+                                onChange={(e) => setFormData({
+                                  ...formData,
+                                  rules: { ...formData.rules, getQty: parseInt(e.target.value) }
+                                })}
+                                required
+                              />
                             </div>
                           </div>
 
@@ -915,12 +915,9 @@ export default function PromotionsPage() {
                                   filteredBuyProducts.map(p => {
                                     const pid = Number(p.id);
                                     const selected = (formData.rules.buyProductIds || []).includes(pid);
-                                    const blockedByOther = (formData.rules.getProductIds || []).includes(pid);
                                     const blockedByPromo = blockedPromotionProductIds.has(pid);
-                                    const disabled = blockedByOther || (blockedByPromo && !selected);
-                                    const disabledTitle = blockedByOther
-                                      ? 'Already selected in Get products'
-                                      : blockedByPromo ? 'Already used in another active promotion' : '';
+                                    const disabled = blockedByPromo && !selected;
+                                    const disabledTitle = blockedByPromo && !selected ? 'Already used in another active promotion' : '';
                                     return (
                                       <div className={`form-check${disabled ? ' opacity-50' : ''}`} key={`buy_${p.id}`} title={disabledTitle}>
                                         <input
@@ -971,12 +968,9 @@ export default function PromotionsPage() {
                                   filteredGetProducts.map(p => {
                                     const pid = Number(p.id);
                                     const selected = (formData.rules.getProductIds || []).includes(pid);
-                                    const blockedByOther = (formData.rules.buyProductIds || []).includes(pid);
                                     const blockedByPromo = blockedPromotionProductIds.has(pid);
-                                    const disabled = blockedByOther || (blockedByPromo && !selected);
-                                    const disabledTitle = blockedByOther
-                                      ? 'Already selected in Buy products'
-                                      : blockedByPromo ? 'Already used in another active promotion' : '';
+                                    const disabled = blockedByPromo && !selected;
+                                    const disabledTitle = blockedByPromo && !selected ? 'Already used in another active promotion' : '';
                                     return (
                                       <div className={`form-check${disabled ? ' opacity-50' : ''}`} key={`get_${p.id}`} title={disabledTitle}>
                                         <input
