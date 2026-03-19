@@ -126,9 +126,9 @@ export default function NewProductPage() {
         const form = new FormData();
         form.append('file', file);
         form.append('folder', 'bakeflow/products');
-        const up = await fetch(`${API_BASE}/api/uploads/cloudinary`, { method: 'POST', body: formData });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || 'Upload failed');
+        const up = await fetch(`${API_BASE}/api/uploads/cloudinary`, { method: 'POST', body: form });
+        const data = await up.json();
+        if (!up.ok) throw new Error(data?.error || 'Upload failed');
         imageUrl = data.url;
       }
     } catch (err) {
@@ -238,18 +238,18 @@ export default function NewProductPage() {
                       <form onSubmit={handleSubmit}>
                         <div className="mb-3">
                           <label className="form-label fw-semibold">Product Name *</label>
-                          <input type="text" className="form-control" value={name} onChange={(e)=>setName(e.target.value)} required />
+                          <input type="text" className="form-control" value={name} onChange={(e) => setName(e.target.value)} required />
                         </div>
 
                         <div className="mb-3">
                           <label className="form-label fw-semibold">Description</label>
-                          <textarea className="form-control" rows={4} value={description} onChange={(e)=>setDescription(e.target.value)} placeholder="Describe your product..." />
+                          <textarea className="form-control" rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe your product..." />
                         </div>
 
                         <div className="row g-3">
                           <div className="col-12 col-md-6">
                             <label className="form-label fw-semibold">Category *</label>
-                            <select className="form-select" value={category} onChange={(e)=>setCategory(e.target.value)} required>
+                            <select className="form-select" value={category} onChange={(e) => setCategory(e.target.value)} required>
                               <option value="cakes">Cakes</option>
                               <option value="cupcakes">Cupcakes</option>
                               <option value="muffins">Muffins</option>
@@ -262,11 +262,11 @@ export default function NewProductPage() {
                           </div>
                           <div className="col-6 col-md-3">
                             <label className="form-label fw-semibold">Price (Ks) *</label>
-                            <input type="number" className="form-control" min="0" step="0.01" value={price} onChange={(e)=>setPrice(e.target.value)} required />
+                            <input type="number" className="form-control" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required />
                           </div>
                           <div className="col-6 col-md-3">
                             <label className="form-label fw-semibold">Stock Quantity *</label>
-                            <input type="number" className="form-control" min="0" step="1" value={stock} onChange={(e)=>setStock(e.target.value)} required />
+                            <input type="number" className="form-control" min="0" step="1" value={stock} onChange={(e) => setStock(e.target.value)} required />
                           </div>
                         </div>
 
@@ -382,12 +382,12 @@ export default function NewProductPage() {
                     <div className="card-body p-4">
                       <div className="mb-3">
                         <label className="form-label fw-semibold">Status</label>
-                        <select className="form-select" value={status} onChange={(e)=>setStatus(e.target.value)}>
+                        <select className="form-select" value={status} onChange={(e) => setStatus(e.target.value)}>
                           <option value="active">Active (Published)</option>
                           <option value="archived">Hidden</option>
                         </select>
                       </div>
-                      <button className="btn btn-primary w-100" onClick={(e)=>handleSubmit(e)} disabled={uploading || creating}>
+                      <button className="btn btn-primary w-100" onClick={(e) => handleSubmit(e)} disabled={uploading || creating}>
                         {uploading ? 'Uploading…' : creating ? 'Saving…' : 'Create Product'}
                       </button>
                       <Link href="/admin/products" className="btn btn-light border w-100 mt-2">Cancel</Link>

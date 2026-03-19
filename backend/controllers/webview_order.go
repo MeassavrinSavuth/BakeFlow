@@ -42,9 +42,18 @@ func ShowWebviewOrderForm(userID string) {
 		webviewURL = fmt.Sprintf("%s&t=%s", webviewURL, tok)
 	}
 
-	msg := "🍰 Welcome to Homemade Homebake!\n\nDon't hesitate to contact us if you have any questions.\n📞 +95 9123456789"
+	msg := "🍰 Welcome to Homemade Homebake!\n\nDon't hesitate to contact us if you have any questions.\n" +
+		"📍 Location: No.550 , Lower Kyimyindine road ,\n" +
+		"     corner of PanHlaing Street , Kyimyindine\n" +
+		"     Township, Yangon .\n" +
+		"☎️Ph: 09252232297"
+
 	if state.Language == "my" {
-		msg = "🍰 Homemade Homebake သို့ ကြိုဆိုပါသည်!\n\nမည်သည့် မေးခွန်းများ ရှိလျှင် ကျပ်တွင် ဆက်သွယ်နိုင်ပါသည်။\n📞 +95 9123456789"
+		msg = "🍰 Homemade Homebake သို့ ကြိုဆိုပါသည်!\n\nမည်သည့် မေးခွန်းများ ရှိလျှင် ကျွန်ုပ်တို့ထံ ဆက်သွယ်နိုင်ပါသည်။\n" +
+			"📍 တည်နေရာ: No.550 , Lower Kyimyindine road ,\n" +
+			"     corner of PanHlaing Street , Kyimyindine\n" +
+			"     Township, Yangon .\n" +
+			"☎️Ph: 09252232297"
 	}
 
 	useExtensions := true

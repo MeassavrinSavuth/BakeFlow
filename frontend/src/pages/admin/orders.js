@@ -1059,17 +1059,16 @@ export default function OrdersPage() {
                     </div>
                     <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
                       <div className="table-responsive">
-                        <table className="table table-hover align-middle mb-0">
+                        <table className="table table-hover align-middle mb-0" style={{ tableLayout: 'fixed' }}>
                           <thead className="table-light">
                             <tr>
-                              <th style={{ width: '100px' }} className="text-start">Order ID</th>
-                              <th style={{ maxWidth: '200px' }} className="text-start">Customer</th>
-                              <th style={{ width: '120px' }} className="text-center">Type</th>
-                              <th style={{ width: '140px' }} className="text-center">Order Status</th>
-                              <th style={{ width: '140px' }} className="text-center">Payment Status</th>
-                              <th style={{ width: '140px' }} className="text-end">Total</th>
-                              <th style={{ width: '160px' }} className="text-center">Date</th>
-                              <th className="text-end">Actions</th>
+                              <th style={{ width: '7%' }} className="text-start">Order ID</th>
+                              <th style={{ width: '25%' }} className="text-start">Customer</th>
+                              <th style={{ width: '8%' }} className="text-center">Type</th>
+                              <th style={{ width: '15%' }} className="text-center">Order Status</th>
+                              <th style={{ width: '15%' }} className="text-center">Payment Status</th>
+                              <th style={{ width: '15%' }} className="text-end">Total</th>
+                              <th style={{ width: '15%' }} className="text-end">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1115,32 +1114,29 @@ export default function OrdersPage() {
 
                               return (
                                 <tr key={order.id} style={{ height: '52px' }}>
-                                  <td className="text-start" style={{ maxWidth: '100px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={orderIdLabel}>
+                                  <td className="text-start" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={orderIdLabel}>
                                     {orderIdLabel}
                                   </td>
-                                  <td className="text-start" style={{ maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={customerName}>
+                                  <td className="text-start" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={customerName}>
                                     {customerName}
                                   </td>
-                                  <td className="text-center" style={{ maxWidth: '120px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={typeLabel}>
+                                  <td className="text-center" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={typeLabel}>
                                     {typeLabel}
                                   </td>
-                                  <td className="text-center" style={{ maxWidth: '140px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={statusLabel}>
+                                  <td className="text-center" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={statusLabel}>
                                     <span className={`badge bg-${statusColor(order.status)} px-3 py-2`}>
                                       {isScheduled && <i className="bi bi-calendar-event me-1" />}
                                       {statusLabel}
                                       {updating === order.id && <span className="ms-2 spinner-border spinner-border-sm" />}
                                     </span>
                                   </td>
-                                  <td className="text-center" style={{ maxWidth: '140px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={paymentStatusLabel}>
+                                  <td className="text-center" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={paymentStatusLabel}>
                                     <span className={`badge bg-${paymentBadge} px-3 py-2`}>
                                       {paymentStatusLabel}
                                     </span>
                                   </td>
-                                  <td className="text-end fw-semibold" style={{ maxWidth: '140px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={formatCurrency(totalAmount)}>
+                                  <td className="text-end fw-semibold" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={formatCurrency(totalAmount)}>
                                     {formatCurrency(totalAmount)}
-                                  </td>
-                                  <td className="text-center" style={{ maxWidth: '160px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={createdAtLabel}>
-                                    {createdAtLabel}
                                   </td>
                                   <td className="text-end">
                                     <div className="d-flex justify-content-end align-items-center gap-2">
@@ -1149,18 +1145,18 @@ export default function OrdersPage() {
                                         const payVerified = ['verified', 'confirmed', 'paid', 'collected'].includes(paymentStatus);
                                         const showAction = nextAction && (!isScanPay || payVerified);
                                         return showAction ? (
-                                        <button
-                                          disabled={updating === order.id || cancelling === order.id}
-                                          onClick={() => updateOrderStatus(order.id, nextAction.nextStatus)}
-                                          className={`btn btn-${nextAction.color} btn-sm d-inline-flex align-items-center gap-1`}
-                                        >
-                                          {updating === order.id ? (
-                                            <span className="spinner-border spinner-border-sm" role="status"></span>
-                                          ) : (
-                                            <i className={`bi bi-${nextAction.icon}`}></i>
-                                          )}
-                                          <span>{nextAction.label}</span>
-                                        </button>
+                                          <button
+                                            disabled={updating === order.id || cancelling === order.id}
+                                            onClick={() => updateOrderStatus(order.id, nextAction.nextStatus)}
+                                            className={`btn btn-${nextAction.color} btn-sm d-inline-flex align-items-center gap-1`}
+                                          >
+                                            {updating === order.id ? (
+                                              <span className="spinner-border spinner-border-sm" role="status"></span>
+                                            ) : (
+                                              <i className={`bi bi-${nextAction.icon}`}></i>
+                                            )}
+                                            <span>{nextAction.label}</span>
+                                          </button>
                                         ) : null;
                                       })()}
                                       <div className="position-relative">
@@ -1292,7 +1288,7 @@ export default function OrdersPage() {
                 </p>
                 <div className="mb-3">
                   <label className="form-label fw-semibold">Cancellation Reason (optional)</label>
-                  
+
                   {/* Quick Reason Options */}
                   <div className="mb-3 d-flex flex-wrap gap-2">
                     {[
@@ -1306,11 +1302,10 @@ export default function OrdersPage() {
                       <button
                         key={reason}
                         type="button"
-                        className={`btn btn-sm ${
-                          cancelReason === reason
-                            ? 'btn-primary'
-                            : 'btn-outline-primary'
-                        }`}
+                        className={`btn btn-sm ${cancelReason === reason
+                          ? 'btn-primary'
+                          : 'btn-outline-primary'
+                          }`}
                         onClick={() => setCancelReason(reason)}
                       >
                         {reason}
@@ -1572,24 +1567,24 @@ export default function OrdersPage() {
                         const vPayVerified = ['verified', 'confirmed', 'paid', 'collected'].includes(vPayStatus);
                         const vShowAction = viewNextAction && (!vIsScanPay || vPayVerified);
                         return vShowAction ? (
-                        <button
-                          disabled={updating === viewOrder.id || cancelling === viewOrder.id}
-                          onClick={() => updateOrderStatus(viewOrder.id, viewNextAction.nextStatus)}
-                          className={`btn btn-${viewNextAction.color} btn-lg flex-grow-1 d-flex align-items-center justify-content-center gap-2`}
-                          style={{ padding: '0.875rem' }}
-                        >
-                          {updating === viewOrder.id ? (
-                            <>
-                              <span className="spinner-border spinner-border-sm" role="status"></span>
-                              <span>{t('updating')}</span>
-                            </>
-                          ) : (
-                            <>
-                              <i className={`bi bi-${viewNextAction.icon} fs-5`}></i>
-                              <span className="fw-semibold">{viewNextAction.label}</span>
-                            </>
-                          )}
-                        </button>
+                          <button
+                            disabled={updating === viewOrder.id || cancelling === viewOrder.id}
+                            onClick={() => updateOrderStatus(viewOrder.id, viewNextAction.nextStatus)}
+                            className={`btn btn-${viewNextAction.color} btn-lg flex-grow-1 d-flex align-items-center justify-content-center gap-2`}
+                            style={{ padding: '0.875rem' }}
+                          >
+                            {updating === viewOrder.id ? (
+                              <>
+                                <span className="spinner-border spinner-border-sm" role="status"></span>
+                                <span>{t('updating')}</span>
+                              </>
+                            ) : (
+                              <>
+                                <i className={`bi bi-${viewNextAction.icon} fs-5`}></i>
+                                <span className="fw-semibold">{viewNextAction.label}</span>
+                              </>
+                            )}
+                          </button>
                         ) : null;
                       })()}
                       {viewOrder.status !== 'delivered' && viewOrder.status !== 'cancelled' && (
