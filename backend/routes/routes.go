@@ -215,10 +215,10 @@ func SetupRoutes() http.Handler {
 	router.HandleFunc("/api/payment-settings", controllers.GetShopPaymentSettings).Methods("GET", "OPTIONS")
 
 	// Admin Payment API
-	router.HandleFunc("/api/admin/payments", controllers.AdminGetPayments).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/admin/payments/{id:[0-9]+}/verify", controllers.AdminVerifyPayment).Methods("POST", "OPTIONS")
-	router.HandleFunc("/api/admin/payment-settings", controllers.AdminGetShopPaymentSettings).Methods("GET", "OPTIONS")
-	router.HandleFunc("/api/admin/payment-settings", controllers.AdminUpdateShopPaymentSettings).Methods("PUT", "OPTIONS")
+	router.Handle("/api/admin/payments", controllers.RequireAdmin(http.HandlerFunc(controllers.AdminGetPayments))).Methods("GET", "OPTIONS")
+	router.Handle("/api/admin/payments/{id:[0-9]+}/verify", controllers.RequireAdmin(http.HandlerFunc(controllers.AdminVerifyPayment))).Methods("POST", "OPTIONS")
+	router.Handle("/api/admin/payment-settings", controllers.RequireAdmin(http.HandlerFunc(controllers.AdminGetShopPaymentSettings))).Methods("GET", "OPTIONS")
+	router.Handle("/api/admin/payment-settings", controllers.RequireAdmin(http.HandlerFunc(controllers.AdminUpdateShopPaymentSettings))).Methods("PUT", "OPTIONS")
 
 	// Preorder Sessions API (pay-before-order for custom cakes)
 	router.HandleFunc("/api/preorder-sessions", controllers.CreatePreorderSession).Methods("POST", "OPTIONS")

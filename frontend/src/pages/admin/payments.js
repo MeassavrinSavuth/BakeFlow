@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import Sidebar from '../../components/Sidebar';
 import { useTranslation } from '../../utils/i18n';
 
 export default function AdminPayments() {
+    const router = useRouter();
     const { t, lang } = useTranslation();
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [payments, setPayments] = useState([]);
@@ -19,6 +21,7 @@ export default function AdminPayments() {
     const [settingsLoading, setSettingsLoading] = useState(true);
     const [settingsSaving, setSettingsSaving] = useState(false);
     const [qrUploading, setQrUploading] = useState(false);
+    const [authChecked, setAuthChecked] = useState(false);
     const [settingsMessage, setSettingsMessage] = useState('');
     const [paymentInfoOpen, setPaymentInfoOpen] = useState(true);
     const [paymentSettings, setPaymentSettings] = useState({
@@ -35,17 +38,77 @@ export default function AdminPayments() {
         return `Ks ${num.toFixed(2)}`;
     };
 
+    const getAdminToken = useCallback(() => {
+        if (typeof window === 'undefined') return '';
+        try {
+            return localStorage.getItem('bakeflow_admin_token') || '';
+        } catch {
+            return '';
+        }
+    }, []);
+
+    const redirectToLogin = useCallback(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.removeItem('bakeflow_admin_token');
+            } catch {
+                // ignore storage errors
+            }
+        }
+        const target = router.asPath || '/admin/payments';
+        router.replace(`/admin/login?redirect=${encodeURIComponent(target)}`);
+    }, [router]);
+
+    const buildAuthHeaders = useCallback((extra = {}) => {
+        const headers = { ...extra };
+        const tok = getAdminToken();
+        if (tok) headers.Authorization = `Bearer ${tok}`;
+        return headers;
+    }, [getAdminToken]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const checkAuth = async () => {
+            const tok = getAdminToken();
+            if (!tok) {
+                if (!cancelled) redirectToLogin();
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/me', {
+                    headers: buildAuthHeaders(),
+                });
+                if (!res.ok) {
+                    if (!cancelled) redirectToLogin();
+                    return;
+                }
+                if (!cancelled) setAuthChecked(true);
+            } catch {
+                if (!cancelled) redirectToLogin();
+            }
+        };
+
+        checkAuth();
+        return () => {
+            cancelled = true;
+        };
+    }, [buildAuthHeaders, getAdminToken, redirectToLogin]);
+
     useEffect(() => {
         setPage(1);
     }, [filter]);
 
     useEffect(() => {
+        if (!authChecked) return;
         fetchPayments();
-    }, [filter, page]);
+    }, [authChecked, filter, page]);
 
     useEffect(() => {
+        if (!authChecked) return;
         fetchPaymentSettings();
-    }, []);
+    }, [authChecked]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -71,7 +134,13 @@ export default function AdminPayments() {
         const PAGE_SIZE = 15;
         setLoading(true);
         try {
-            const res = await fetch(`/api/admin/payments?status=${filter}&page=${page}&limit=${PAGE_SIZE}`);
+            const res = await fetch(`/api/admin/payments?status=${filter}&page=${page}&limit=${PAGE_SIZE}`, {
+                headers: buildAuthHeaders(),
+            });
+            if (res.status === 401) {
+                redirectToLogin();
+                return;
+            }
             const data = await res.json();
 
             // Preferred shape (server-side pagination)
@@ -111,7 +180,13 @@ export default function AdminPayments() {
         setSettingsLoading(true);
         setSettingsMessage('');
         try {
-            const res = await fetch('/api/admin/payment-settings');
+            const res = await fetch('/api/admin/payment-settings', {
+                headers: buildAuthHeaders(),
+            });
+            if (res.status === 401) {
+                redirectToLogin();
+                return;
+            }
             const data = await res.json();
             const settings = data?.settings || data || {};
             setPaymentSettings((prev) => ({
@@ -149,8 +224,13 @@ export default function AdminPayments() {
 
             const res = await fetch('/api/uploads/cloudinary', {
                 method: 'POST',
+                headers: buildAuthHeaders(),
                 body: formData,
             });
+            if (res.status === 401) {
+                redirectToLogin();
+                return;
+            }
             const data = await res.json();
             if (!res.ok || !data?.url) {
                 throw new Error(data?.error || 'Upload failed');
@@ -180,9 +260,13 @@ export default function AdminPayments() {
         try {
             const res = await fetch('/api/admin/payment-settings', {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(paymentSettings),
             });
+            if (res.status === 401) {
+                redirectToLogin();
+                return;
+            }
             const data = await res.json();
             if (!res.ok || !data?.success) {
                 throw new Error(data?.error || 'Failed to save settings');
@@ -229,9 +313,13 @@ export default function AdminPayments() {
         try {
             const res = await fetch(`/api/admin/payments/${confirmPaymentId}/verify`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ status: confirmStatus }),
             });
+            if (res.status === 401) {
+                redirectToLogin();
+                return;
+            }
             if (res.ok) {
                 fetchPayments();
                 closeConfirm();
